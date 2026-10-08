@@ -1,0 +1,27 @@
+:root {
+  --text: #4a3f4f;
+  --text-h: #2a1f2e;
+  --bg: #fff8fb;
+  --border: #f1e3ea;
+  --accent: #ff7aa2;
+
+  font: 16px/1.5 system-ui, 'Segoe UI', Roboto, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  color-scheme: light;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+h1 {
+  margin: 0;
+  color: var(--text-h);
+}

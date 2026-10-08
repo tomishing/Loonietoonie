@@ -1,0 +1,28 @@
+# Environment variables (real .env files are ignored; .env.example files are tracked)
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Node
+node_modules/
+frontend/dist/
+frontend/dev-dist/
+
+# Python
+backend/.venv/
+__pycache__/
+.pytest_cache/
+
+# Capacitor native build output (added in phase 9)
+frontend/android/app/build/
+
+# Logs / OS
+*.log
+.DS_Store
+
+# Local receipt files
+*.pdf
+*.jpg
+*.jpeg
+*.docx

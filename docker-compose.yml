@@ -1,0 +1,22 @@
+# Local development stack. The frontend is deployed separately (Vercel/Netlify);
+# run it with `npm run dev` in frontend/ during development.
+services:
+  backend:
+    build: ./backend
+    env_file:
+      - path: ./.env
+        required: false
+      - path: ./backend/.env
+        required: false
+    environment:
+      APP_ENV: development
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
