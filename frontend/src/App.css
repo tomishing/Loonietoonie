@@ -16,19 +16,56 @@
   margin: 0;
 }
 
-.status {
-  padding: 4px 12px;
-  border-radius: 999px;
+.muted {
+  margin: 0;
   font-size: 0.9rem;
-  background: var(--border);
+  opacity: 0.75;
 }
 
-.status-online {
-  background: #d7f5e3;
-  color: #17643a;
+.notice {
+  max-width: 28rem;
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 12px;
+  font-size: 0.95rem;
 }
 
-.status-offline {
+.notice-error {
   background: #ffe0e0;
   color: #9b1c1c;
+}
+
+.button {
+  min-height: 44px;
+  padding: 10px 22px;
+  border: none;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button-google {
+  background: var(--accent);
+  color: #fff;
+}
+
+.button-secondary {
+  background: var(--border);
+  color: var(--text-h);
+}
+
+.account {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.account p {
+  margin: 0;
+}
+
+.avatar {
+  border-radius: 50%;
 }

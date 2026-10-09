@@ -46,6 +46,26 @@ All financial data lives in the user's own Google Drive:
 
 The backend has no database server for financial data (see §8 for planned exceptions). OAuth uses only the `drive.file` scope, so the app can see only files it created.
 
+### Authentication and sessions
+
+Google Sign-In uses the OAuth 2.0 authorization-code flow with PKCE, run entirely by the backend:
+
+1. The frontend navigates to `GET /api/auth/google`. The backend stores a random `state` and the PKCE verifier in a short-lived encrypted cookie (`lt_oauth`, 10 min, path `/api/auth`) and redirects to Google.
+2. Scopes: `openid email profile https://www.googleapis.com/auth/drive.file`, with `access_type=offline` and `prompt=consent` so Google always returns a refresh token.
+3. Google redirects to `GET /api/auth/callback`. The backend checks `state`, exchanges the code (with the PKCE verifier), and verifies the ID token (signature, audience, issuer, expiry, verified email).
+4. Users can untick permissions on Google's consent screen. If `drive.file` was not granted, sign-in fails with `drive_permission_required`.
+5. The backend sets the session cookie and redirects to `FRONTEND_URL`. Failures redirect to `FRONTEND_URL/?auth_error=<reason>` (`access_denied`, `invalid_state`, `drive_permission_required`, `google_error`), and the frontend shows a friendly message.
+
+**Session storage (until storage stage 3):** there is no server-side session store. The session (`lt_session` cookie) holds the user's Google ID (`sub`), email, name, picture, and **refresh token**, encrypted and authenticated with Fernet using a key derived from `SESSION_SECRET`.
+
+- Cookie flags: `HttpOnly`, `SameSite=Lax`, `Secure` outside development, 30-day lifetime (`SESSION_MAX_AGE_DAYS`). The server also rejects tokens older than that.
+- `GET /api/auth/me` returns only email, name, and picture. Tokens never reach JavaScript.
+- `POST /api/auth/logout` clears the cookie. It does not revoke Google access; users can do that in their Google Account.
+- Changing `SESSION_SECRET` signs everyone out.
+- In stage 3 the refresh token moves to the encrypted server-side token store and the cookie keeps only a session reference.
+
+**Deployment:** the cookie is first-party, so in production the frontend must reach the API on the same site, e.g. a Vercel/Netlify rewrite from `/api/*` to the backend (set `VITE_API_BASE_URL` empty). The Capacitor app (phase 9) may need a bearer-token variant, since its WebView origin differs from the API.
+
 ### Storage interface
 
 Routes and services access data only through the `Repository` protocol in `backend/app/storage/`. `SheetsRepository` is the current implementation. A local cache or `PostgresRepository` can be added later without changing business logic.
@@ -103,7 +123,9 @@ Tests for the parser use sample OCR texts in several languages (at least English
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | GET | `/api/health` | Health check (phase 1) |
-| GET | `/api/auth/google`, `/api/auth/callback` | Google Sign-In |
+| GET | `/api/auth/google`, `/api/auth/callback` | Google Sign-In (§3) |
+| GET | `/api/auth/me` | Signed-in user (email, name, picture); 401 if not signed in |
+| POST | `/api/auth/logout` | Clear the session cookie |
 | POST | `/api/receipts/scan` | OCR text (+ image on retry) → Claude → draft receipt |
 | POST | `/api/receipts` | Save confirmed receipt + items |
 | GET | `/api/receipts` | List (filters: date, category) |
@@ -148,19 +170,19 @@ Real values go in `.env` files, which are git-ignored. Only `.env.example` files
 
 | File | Variables |
 | --- | --- |
-| `backend/.env` (or repo-root `.env`; `backend/.env` wins) | `APP_ENV`, `FRONTEND_ORIGINS`, `ANTHROPIC_API_KEY`, `ANTHROPIC_RECEIPT_MODEL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `SESSION_SECRET`, `DEFAULT_CURRENCY` |
-| `frontend/.env` | `VITE_API_BASE_URL`, `VITE_DEV_BACKEND_URL`, `VITE_GOOGLE_CLIENT_ID` |
+| `backend/.env` (or repo-root `.env`; `backend/.env` wins) | `APP_ENV`, `FRONTEND_ORIGINS`, `FRONTEND_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_RECEIPT_MODEL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `SESSION_SECRET` (32+ chars), `SESSION_MAX_AGE_DAYS`, `DEFAULT_CURRENCY` |
+| `frontend/.env` | `VITE_API_BASE_URL`, `VITE_DEV_BACKEND_URL` |
 
 `VITE_*` variables are visible in the browser bundle, so they never hold secrets.
 
-External setup: an Anthropic API key, a Google Cloud project with the Sheets + Drive APIs enabled, a Google OAuth client ID/secret, and a Cloud Vision key (web OCR fallback only).
+External setup: an Anthropic API key, a Google Cloud project with the Sheets + Drive APIs enabled, a Google OAuth client of type **Web application** (with `GOOGLE_REDIRECT_URI` under "Authorized redirect URIs"), and a Cloud Vision key (web OCR fallback only). The frontend does not need the Google client ID, because the backend runs the whole OAuth flow.
 
 ## 10. Development phases
 
 | # | Phase | Status |
 | --- | --- | --- |
 | 1 | Scaffold: `frontend/` (Vite React PWA + TS), `backend/` (FastAPI), Docker Compose, `.env.example` | Done |
-| 2 | Auth: Google Sign-In (`drive.file`) | |
+| 2 | Auth: Google Sign-In (`drive.file`) | Done |
 | 3 | Storage: create the LoonieToonie spreadsheet + tabs on first login; `Repository` interface + `SheetsRepository` | |
 | 4 | Receipts CRUD (manual entry first) | |
 | 5 | Scan flow: Capacitor ML Kit OCR + Claude parsing + review page | |
@@ -174,7 +196,6 @@ External setup: an Anthropic API key, a Google Cloud project with the Sheets + D
 
 To be decided in the phase where they first matter:
 
-- **Phase 2:** session handling between frontend and backend (cookie vs token), and where the Google refresh token lives before stage 3.
 - **Phase 3:** the default category list and icons created on first login.
 - **Phase 5:** the exact Claude JSON schema for a draft receipt; how discounts and tax lines are represented; rounding tolerance for the total check; which receipt languages ship first.
 - **Phase 6:** how "saved amount" is defined (budget minus actual, or income minus spending).

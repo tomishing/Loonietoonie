@@ -2,3 +2,6 @@ fastapi>=0.143
 uvicorn[standard]>=0.54
 pydantic>=2.14
 pydantic-settings>=2.15
+google-auth>=2.61
+requests>=2.34
+cryptography>=50.0
