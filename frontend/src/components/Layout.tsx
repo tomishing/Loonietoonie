@@ -16,12 +16,15 @@ export function Layout() {
             <NavLink to="/" end>
               Home
             </NavLink>
+            <NavLink to="/dashboard">Patterns</NavLink>
             <NavLink to="/transactions">Transactions</NavLink>
             <NavLink to="/receipts/new">+ Add</NavLink>
-            <NavLink to="/scan" className="nav-add">
-              📷 Scan
-            </NavLink>
           </nav>
+        )}
+        {status === 'signed-in' && (
+          <NavLink to="/scan" className="header-scan">
+            📷 Scan
+          </NavLink>
         )}
       </header>
       <main className="app-main">

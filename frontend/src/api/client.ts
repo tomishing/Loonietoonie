@@ -248,3 +248,52 @@ export function logout(): Promise<void> {
 
 /** Full-page navigation target that starts Google Sign-In on the backend. */
 export const LOGIN_URL = `${API_BASE_URL}/api/auth/google`
+
+// --- dashboard ----------------------------------------------------------------
+
+export interface CategorySpending {
+  category: string
+  total: string
+  previous_total: string
+  average_total: string | null
+  share: string
+}
+
+export interface TrendMonth {
+  month: string
+  total: string
+  by_category: Record<string, string>
+}
+
+export interface Change {
+  kind: 'category_up' | 'category_down' | 'category_new' | 'new_store'
+  category: string | null
+  store: string | null
+  amount: string
+  baseline: string | null
+}
+
+export interface Summary {
+  currency: string
+  currencies: string[]
+  period: { month: string; start: string; end: string; partial: boolean }
+  total: string
+  receipt_count: number
+  previous_total: string
+  average_total: string | null
+  categories: CategorySpending[]
+  trend: TrendMonth[]
+  trend_categories: string[]
+  top_stores: { store: string; total: string; visits: number }[]
+  top_items: { name: string; times: number; total: string }[]
+  changes: Change[]
+}
+
+/** Category name used for amounts on a receipt that its items don't cover. */
+export const NOT_ITEMIZED = '(not itemized)'
+
+export function getSummary(month: string, currency?: string): Promise<Summary> {
+  const params = new URLSearchParams({ month })
+  if (currency) params.set('currency', currency)
+  return apiGet<Summary>(`/api/summary?${params}`)
+}

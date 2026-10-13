@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => {
         manifest: {
           name: 'LoonieToonie',
           short_name: 'LoonieToonie',
-          description: 'Scan receipts, track spending, and see how much you can save.',
+          description: 'Scan your receipts and see where your money goes.',
           theme_color: '#ffb5c8',
           background_color: '#fff8fb',
           display: 'standalone',

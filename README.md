@@ -1,6 +1,6 @@
 # LoonieToonie
 
-Household expense app: scan receipts, track spending, see how much you can save.
+Household expense app: scan your receipts and see where your money goes — spending by category, month-to-month changes, and what's unusual.
 See `specification.md` for the full spec.
 
 ## Requirements

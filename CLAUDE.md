@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Working rules for Claude Code on **LoonieToonie**, a household expense app (scan receipts, track spending, see how much you can save).
+Working rules for Claude Code on **LoonieToonie**, a household expense app: scan receipts and see actual spending patterns (where the money goes). Savings features come later.
 
 - **`specification.md`** is the full product and technical spec: data flow, spreadsheet schema, API, pages, storage roadmap, phases. Read the relevant sections before starting a phase.
 - **`README.md`** has setup and run instructions.

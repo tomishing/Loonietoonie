@@ -41,3 +41,13 @@ export function lineTotal(quantity: string, price: string): bigint | null {
   const p = parseDecimal(price)
   return q === null || p === null ? null : multiply(q, p)
 }
+
+/** Percentage change from `before` to `after`, rounded to a whole number. Null if `before` is 0 or invalid. */
+export function percentChange(after: string, before: string): number | null {
+  const a = parseDecimal(after)
+  const b = parseDecimal(before)
+  if (a === null || b === null || b === 0n) return null
+  const tenths = ((a - b) * 1000n) / (b < 0n ? -b : b)
+  const rounded = tenths >= 0n ? (tenths + 5n) / 10n : (tenths - 5n) / 10n
+  return Number(rounded)
+}

@@ -4,7 +4,9 @@ This is the product and technical specification for **LoonieToonie**. `CLAUDE.md
 
 ## 1. Overview
 
-LoonieToonie is a household expense app. Users scan receipts, track spending, and see their spending habits so they know how much they can save.
+LoonieToonie is a household expense app. Users scan receipts and see **where their money goes**: their actual spending, by category and over time, and the patterns in it.
+
+The current goal is understanding real spending, not saving. How much users save (budgets, saved amount, saving suggestions) is a later step that builds on these patterns (see phase 10).
 
 ### Current priorities
 
@@ -13,6 +15,7 @@ LoonieToonie is a household expense app. Users scan receipts, track spending, an
    - Languages tested first: English, French (Québec), and Japanese.
 2. Assign a category to each item based on its name.
 3. Show items with their categories and prices, sorted by date.
+4. Show spending patterns: where the money goes, how it changes month to month, and what is unusual.
 
 ### Platforms
 
@@ -217,8 +220,8 @@ Tests: `tests/samples/` holds OCR texts in English (Ontario, HST), French (Québ
 | GET | `/api/receipts/{id}` | One receipt with its items; 404 if missing or deleted |
 | PUT | `/api/receipts/{id}` | Replace a receipt's fields and items (§5) |
 | DELETE | `/api/receipts/{id}` | Soft-delete the receipt and its items; 204 |
-| GET / PUT | `/api/budgets` | Monthly budgets per category |
-| GET | `/api/summary?period=month` | Totals, by-category, budget vs actual, saved amount |
+| GET | `/api/summary?month=YYYY-MM&currency=CAD` | Spending patterns for one month and one currency (§7 Dashboard). Defaults: this month, `DEFAULT_CURRENCY` |
+| GET / PUT | `/api/budgets` | Later (savings step, phase 10): monthly budgets per category |
 | POST | `/api/chat` | Spending chatbot |
 | GET | `/api/export/csv` | CSV export |
 
@@ -248,7 +251,7 @@ Updates and deletes always re-read the tabs, so row numbers are correct even if 
 
 ## 7. Frontend
 
-- Pages: Home, Scan (capture → review/edit → save), Transactions, Dashboard, Budget, Settings.
+- Pages: Home, Scan (capture → review/edit → save), Transactions, Dashboard ("Patterns"), Settings. A Budget page comes with the savings step (phase 10).
 - Built so far (routes via React Router):
   - `/` Home: sign-in, Scan and Enter-by-hand buttons, spreadsheet link, categories.
   - `/scan`: take or choose a photo, read it on the device with progress, send the text (and the photo once if needed), then open the review screen.
@@ -257,6 +260,39 @@ Updates and deletes always re-read the tabs, so row numbers are correct even if 
   - Review screen: `/receipts/new` with a scan result in router state. It is pre-filled from the draft, lists the issues, shows the photo, keeps the scanned total as read, and uploads the photo after saving.
   - Transactions show a 📷 link for receipts with a photo.
 - Money in the frontend is handled as decimal strings and bigint math (`src/lib/decimal.ts`), never JS floats.
+
+### Dashboard ("Patterns", `/dashboard`)
+
+Purpose: see actual spending patterns. Computed on the backend with pandas (`app/services/summary.py`) from all receipts, served by `GET /api/summary`.
+
+- **One currency at a time.** The dashboard shows `DEFAULT_CURRENCY` (CAD); a switcher appears when there are receipts in other currencies. Amounts are never converted or added across currencies.
+- **Period:** one month (‹ › and a month picker; no future months). For the **month in progress**, every comparison uses the same days (1 to today) of earlier months, so a half month isn't compared with full months.
+- **Usual month:** the average of the previous 3 months, counting only months since the first receipt in that currency (no invented zeros). No history → no comparisons and no notable changes. Averages are rounded to 0.01.
+- **Views:**
+  1. *Total spent* (the one hero figure), with % change vs last month and vs the usual month, and the receipt count.
+  2. *Notable changes*, in plain words:
+     - a category ≥ 25% above or below its usual amount, where the difference is also ≥ 5% of the usual month's total spending
+     - a category with spending for the first time (≥ 5% of this month)
+     - up to 3 stores visited for the first time ever
+     - Tax & Fees is not reported (it follows other spending). At most 5 entries.
+  3. *By category*:
+     - one horizontal bar per category, all in the same color (a single series), with a tick for the usual month
+     - each row shows the amount and the change vs usual; categories that dropped to zero stay listed
+     - hover or keyboard focus shows this month, last month, and the usual month
+  4. *Last 12 months*:
+     - stacked columns of the top 5 categories (by 12-month spending), with smaller categories folded into a gray "Other categories" (`(other categories)` in the API, never equal to a real category name)
+     - a legend, a tooltip listing every series, and a "Show table" view with all the numbers
+  5. *Top stores* (spent, visits) and *Bought most often* (times, spent; Tax & Fees excluded) for the month, as tables.
+- **Not itemized:** when a receipt's total differs from its items (e.g. tax typed only into the total), the difference is shown as "Not itemized" (`(not itemized)`), so category totals always add up to the month's total.
+- **Charts:**
+  - categorical slots 1–5 of the validated reference palette (blue, orange, aqua, yellow, magenta) in fixed order, gray for "Other categories"
+  - thin marks: bars ≤ 24 px, a 2 px surface gap between stacked segments, hairline grid
+  - text always in text colors, never in series colors
+  - three slots fall below 3:1 contrast on the light surface, so the legend and table view are required
+- **Loading:**
+  - while another month loads, the previous one stays visible, dimmed
+  - Recharts loads only when the dashboard opens (lazy route)
+  - an on-device cache (storage stage 2) is not needed yet: the backend's 60-second read cache keeps the dashboard quick. Revisit if loading feels slow.
 - PWA: manifest + service worker. Users can view past data offline (IndexedDB cache is optional). The service worker never serves `/api/*` from cache.
 - In development, Vite proxies `/api/*` to the backend. In production, `VITE_API_BASE_URL` points to the backend.
 - UI style: simple and friendly, with cute icons and a girl mascot character. The current icon is a placeholder.
@@ -303,14 +339,14 @@ External setup: an Anthropic API key, a Google Cloud project with the Sheets + D
 | 3 | Storage: create the LoonieToonie spreadsheet + tabs on first login; `Repository` interface + `SheetsRepository` | Done |
 | 4 | Receipts CRUD (manual entry first) | Done |
 | 5 | Scan flow: on-device OCR (Tesseract.js on web; ML Kit moves to phase 9) + Claude parsing + review page | Done |
-| 6 | Dashboard & budgets (+ on-device cache if loading is slow; storage stage 2) | |
+| 6 | Dashboard: spending patterns (+ on-device cache if loading is slow; storage stage 2) | Done |
 | 7 | Chatbot | |
 | 8 | CSV export | |
 | 9 | Capacitor Android build (needs Android Studio locally), including ML Kit OCR behind `recognizeReceipt()` | |
-| 10 | Later: bank/card linking (Plaid / Flinks) with an encrypted token store (storage stage 3), saving/investment suggestions | |
+| 10 | Later: savings step (monthly budgets per category with budget vs actual, saved amount, saving/investment suggestions); bank/card linking (Plaid / Flinks) with an encrypted token store (storage stage 3) | |
 
 ## 11. Open questions
 
 To be decided in the phase where they first matter:
 
-- **Phase 6:** how "saved amount" is defined (budget minus actual, or income minus spending).
+- **Phase 10 (savings step):** how "saved amount" is defined (budget minus actual, or income minus spending).

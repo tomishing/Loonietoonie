@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDecimal, lineTotal, multiply, parseDecimal, sum } from './decimal'
+import { formatDecimal, lineTotal, multiply, parseDecimal, percentChange, sum } from './decimal'
 
 const d = (text: string) => {
   const value = parseDecimal(text)
@@ -44,5 +44,22 @@ describe('money math without floats', () => {
 
   it('returns null for incomplete lines', () => {
     expect(lineTotal('1', '')).toBeNull()
+  })
+})
+
+describe('percentChange', () => {
+  it.each([
+    ['120', '50', 140],
+    ['40', '100', -60],
+    ['10.5', '10', 5],
+    ['100', '100', 0],
+    ['1', '3', -67],
+  ])('%s vs %s → %d%%', (after, before, expected) => {
+    expect(percentChange(after, before)).toBe(expected)
+  })
+
+  it('is null when there is nothing to compare with', () => {
+    expect(percentChange('5', '0')).toBeNull()
+    expect(percentChange('5', 'abc')).toBeNull()
   })
 })

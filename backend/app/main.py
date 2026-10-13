@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.api import auth, categories, health, receipts, scan
+from app.api import auth, categories, health, receipts, scan, summary
 from app.config import get_settings
 from app.storage.repository import StorageError
 
@@ -27,6 +27,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix="/api")
     app.include_router(auth.router, prefix="/api")
     app.include_router(categories.router, prefix="/api")
+    app.include_router(summary.router, prefix="/api")
     app.include_router(scan.router, prefix="/api")
     app.include_router(receipts.router, prefix="/api")
 

@@ -16,7 +16,7 @@ export function HomePage() {
     <section className="home">
       <img className="mascot" src="/favicon.svg" alt="LoonieToonie mascot" width={120} height={120} />
       <h1>LoonieToonie</h1>
-      <p className="tagline">Scan receipts, track spending, and see how much you can save.</p>
+      <p className="tagline">Scan your receipts and see where your money goes.</p>
 
       {signInError && (
         <p className="notice notice-error" role="alert">
@@ -53,6 +53,9 @@ export function HomePage() {
             </Link>
             <Link to="/receipts/new" className="button button-secondary">
               + Enter by hand
+            </Link>
+            <Link to="/dashboard" className="button button-secondary">
+              📊 Spending patterns
             </Link>
             <Link to="/transactions" className="button button-secondary">
               See transactions

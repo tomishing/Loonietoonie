@@ -7,3 +7,4 @@ requests>=2.34
 cryptography>=50.0
 gspread>=6.2
 anthropic>=1.13
+pandas>=3.0
