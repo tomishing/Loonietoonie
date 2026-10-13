@@ -48,8 +48,11 @@ export function HomePage() {
           </p>
           <p className="muted">{user.email}</p>
           <div className="actions">
-            <Link to="/receipts/new" className="button button-primary">
-              + Add a receipt
+            <Link to="/scan" className="button button-primary">
+              📷 Scan a receipt
+            </Link>
+            <Link to="/receipts/new" className="button button-secondary">
+              + Enter by hand
             </Link>
             <Link to="/transactions" className="button button-secondary">
               See transactions

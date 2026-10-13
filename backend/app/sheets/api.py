@@ -4,6 +4,8 @@ Everything that talks to Google for storage goes through `SheetsApi`, so the
 setup logic and the repository can be tested with an in-memory fake.
 """
 
+import json
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -13,6 +15,7 @@ from gspread.http_client import HTTPClient
 from app.sheets.schema import APP_PROPERTY_KEY, tab_range
 
 DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
+DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files"
 REQUEST_TIMEOUT_SECONDS = 15
 
 
@@ -30,6 +33,10 @@ class SheetsApi(Protocol):
         ...
 
     def create_file(self, name: str, mime_type: str, marker: str, parent_id: str | None) -> str: ...
+
+    def upload_file(self, name: str, media_type: str, data: bytes, parent_id: str, marker: str) -> str:
+        """Upload a file into a Drive folder and return its web link."""
+        ...
 
     def get_sheets(self, spreadsheet_id: str) -> list[SheetInfo]:
         """All tabs with their header row (row 1)."""
@@ -78,6 +85,28 @@ class GoogleSheetsApi:
         response = self._http.request("post", DRIVE_FILES_URL, params={"fields": "id"}, json=body)
         file_id: str = response.json()["id"]
         return file_id
+
+    def upload_file(self, name: str, media_type: str, data: bytes, parent_id: str, marker: str) -> str:
+        metadata = {"name": name, "parents": [parent_id], "appProperties": {APP_PROPERTY_KEY: marker}}
+        boundary = f"loonietoonie-{uuid.uuid4().hex}"
+        metadata_part = f"Content-Type: application/json; charset=UTF-8\r\n\r\n{json.dumps(metadata)}"
+        body = b"".join(
+            [
+                f"--{boundary}\r\n{metadata_part}\r\n".encode(),
+                f"--{boundary}\r\nContent-Type: {media_type}\r\n\r\n".encode(),
+                data,
+                f"\r\n--{boundary}--\r\n".encode(),
+            ]
+        )
+        response = self._http.request(
+            "post",
+            DRIVE_UPLOAD_URL,
+            params={"uploadType": "multipart", "fields": "id,webViewLink"},
+            data=body,
+            headers={"Content-Type": f"multipart/related; boundary={boundary}"},
+        )
+        link: str = response.json()["webViewLink"]
+        return link
 
     def get_sheets(self, spreadsheet_id: str) -> list[SheetInfo]:
         metadata = self._http.fetch_sheet_metadata(

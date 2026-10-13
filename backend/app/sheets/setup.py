@@ -11,6 +11,7 @@ from app.sheets.schema import (
     FOLDER_MARKER,
     FOLDER_MIME_TYPE,
     FOLDER_NAME,
+    REQUIRED_CATEGORIES,
     SPREADSHEET_MARKER,
     SPREADSHEET_MIME_TYPE,
     SPREADSHEET_NAME,
@@ -89,6 +90,26 @@ def migrate(api: SheetsApi, spreadsheet_id: str, now: str) -> None:
         api.batch_update(spreadsheet_id, requests)
     if values:
         api.write_values(spreadsheet_id, values)
+
+    if "categories" not in created:
+        _add_required_categories(api, spreadsheet_id, now)
+
+
+def _add_required_categories(api: SheetsApi, spreadsheet_id: str, now: str) -> None:
+    """Data migration: append categories the app relies on (one read, at most one write)."""
+    rows = api.read_values(spreadsheet_id, tab_range("categories"))
+    headers = [header.strip() for header in rows[0]] if rows else []
+    if "name" not in headers:
+        return
+    name_index = headers.index("name")
+    existing = {row[name_index].strip().casefold() for row in rows[1:] if len(row) > name_index}
+    missing = [(name, icon) for name, icon in REQUIRED_CATEGORIES if name.casefold() not in existing]
+    if missing:
+        records = [
+            {"name": name, "icon": icon, "updated_at": now, "deleted": FALSE} for name, icon in missing
+        ]
+        rows_to_add = [[record.get(header, "") for header in headers] for record in records]
+        api.append_values(spreadsheet_id, tab_range("categories"), rows_to_add)
 
 
 def _blank_starter_sheet(sheets: list[SheetInfo]) -> SheetInfo | None:

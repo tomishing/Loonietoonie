@@ -10,6 +10,8 @@ import requests
 from google.auth.exceptions import GoogleAuthError as GoogleLibraryAuthError
 from gspread.exceptions import APIError
 
+from app.config import DEFAULT_CURRENCY
+from app.drive.receipts import upload_receipt_image
 from app.sheets.api import SheetsApi
 from app.sheets.schema import FALSE, TABS, TRUE, tab_range, utc_now_iso
 from app.storage.models import Category, Item, ItemDraft, Receipt, ReceiptDraft, ReceiptFilter
@@ -172,6 +174,23 @@ class SheetsRepository:
         self._write_rows(writes)
         self._append("items", items_tab.headers, new_records)
         return _build_receipt(receipt_record, kept + new_records)
+
+    def attach_receipt_image(self, receipt_id: str, data: bytes, media_type: str) -> Receipt | None:
+        receipts_tab = self._read("receipts", fresh=True)
+        receipt_row = _find_active(receipts_tab, "receipt_id", receipt_id)
+        if receipt_row is None:
+            return None
+        items_tab = self._read("items")
+        receipt = next(r for r in self._load_receipts(receipts_tab, items_tab) if r.receipt_id == receipt_id)
+
+        try:
+            link = upload_receipt_image(self._api, receipt, data, media_type)
+        except GOOGLE_ERRORS as exc:
+            raise StorageError("Could not upload the receipt photo to Google Drive") from exc
+
+        updates = {"image_link": link, "updated_at": utc_now_iso()}
+        self._write_rows([("receipts", _with_values(receipt_row, receipts_tab.headers, updates))])
+        return receipt.model_copy(update=updates)
 
     def delete_receipt(self, receipt_id: str) -> bool:
         receipts_tab = self._read("receipts", fresh=True)
@@ -352,7 +371,7 @@ def _build_receipt(record: Record, item_records: list[Record]) -> Receipt:
         store=record.get("store", ""),
         purchased_at=date.fromisoformat(record.get("purchased_at", "").strip()),
         total=_parse_decimal(record.get("total", "")),
-        currency=(record.get("currency", "").strip().upper() or "USD"),
+        currency=(record.get("currency", "").strip().upper() or DEFAULT_CURRENCY),
         image_link=record.get("image_link", ""),
         created_at=record.get("created_at", ""),
         updated_at=record.get("updated_at", ""),

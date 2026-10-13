@@ -9,7 +9,8 @@ LoonieToonie is a household expense app. Users scan receipts, track spending, an
 ### Current priorities
 
 1. Scan multilingual receipts (English, Japanese, etc.) and get the **date, items, prices, and currency** right.
-   - Default currency: **USD**. Users can change it on the review screen.
+   - Default currency: **CAD** (`DEFAULT_CURRENCY`). Users can change it on the review screen.
+   - Languages tested first: English, French (Québec), and Japanese.
 2. Assign a category to each item based on its name.
 3. Show items with their categories and prices, sorted by date.
 
@@ -97,18 +98,24 @@ Sheets API quotas are about 60 reads + 60 writes per minute per user, so:
 2. If none exists, find or create the Drive folder **LoonieToonie** (`loonietoonie=root-folder`) and create the **LoonieToonie** spreadsheet inside it.
 3. Migrate: add any missing tab, and append any missing column to the end of an existing tab's header row. Existing data, column order, and extra tabs or columns the user added are left alone. A new spreadsheet's empty starter tab ("Sheet1", or its localized name) becomes `receipts`. Header rows are frozen.
 4. When the `categories` tab is created, it is filled with the default categories (§4). An existing `categories` tab is never reseeded.
+5. Data migration: categories the app relies on (currently **Tax & Fees**) are appended to an existing `categories` tab if no row with that name exists. A row the user soft-deleted counts as existing, so it is not re-added.
 
-First sign-in costs 2 Drive writes and 2 Sheets writes. Later sign-ins cost 2 reads and no writes when the schema is already current.
+First sign-in costs 2 Drive writes and 2 Sheets writes. Later sign-ins cost 3 reads and no writes when everything is already current.
 
 ### Scan flow
 
-1. User captures a receipt photo in the Scan page.
+1. The user takes or picks a receipt photo on the Scan page. The browser downsizes it to at most 2000 px on the long edge (JPEG).
 2. OCR runs **on the device** through one function, `recognizeReceipt()` in `frontend/src/ocr/`. Platform differences stay inside that folder.
-3. The frontend sends the OCR text to `POST /api/receipts/scan`.
-4. The backend asks Claude to parse the text into a draft receipt. Output is **strict JSON**, enforced with tool use / structured output and described by a Pydantic model.
-5. The backend validates the draft (§5). If validation fails, it retries **once** with the receipt image attached. The image is never sent to Claude otherwise.
-6. The user reviews and edits the draft (store, date, currency, items, categories), then saves with `POST /api/receipts`.
-7. The backend generates UUIDs, appends rows to the sheet, and stores the image in Drive.
+   - Web/PWA: **Tesseract.js** with English, French, and Japanese language data (downloaded once, then cached by the browser).
+   - Android: Google ML Kit, added in phase 9. iOS later: Apple Vision.
+3. The frontend sends **only the OCR text** to `POST /api/receipts/scan`.
+4. The backend asks Claude (`ANTHROPIC_RECEIPT_MODEL`, default `claude-haiku-5-5`) to read the text into a draft receipt. Output is **strict JSON** via structured outputs (`output_config.format` with a JSON schema whose `category` is an enum of the user's categories).
+5. The backend normalizes and validates the draft (§5). Nothing is saved.
+   - If a blocking issue is found and no photo was sent, the response has `needs_image: true`. The frontend then sends the same request **once** more with the photo (base64), and Claude reads the photo plus the text.
+   - The photo leaves the device only for that retry, and never on a clean first reading. A second failure does not retry again; the issues are shown on the review screen.
+   - Empty OCR text skips the first Claude call and asks for the photo directly.
+6. The user reviews and edits the draft on the review screen (the receipt form, pre-filled, with the issues listed and the photo shown), then saves with `POST /api/receipts`.
+7. After saving, the frontend uploads the photo with `PUT /api/receipts/{id}/image`. The backend stores it in Drive under `LoonieToonie/receipts/` (created on first use, found by the app property `loonietoonie=receipts-folder`) as `YYYY-MM-DD <store> <id prefix>.jpg`, and writes its link to `image_link`. If the upload fails, the receipt stays saved and the user is told.
 
 ## 4. Data model (spreadsheet tabs)
 
@@ -130,6 +137,7 @@ Rules:
 - Purchase dates are `YYYY-MM-DD`.
 - `ocr_labels` records user corrections to model output, only if the user opts in.
 - Values are written as plain text (`RAW`), so dates, amounts, and `TRUE`/`FALSE` are stored exactly and are not reinterpreted by the spreadsheet's locale.
+- Schema changes must be applied to existing spreadsheets by a migration that runs on login.
 
 ### Default categories
 
@@ -143,8 +151,9 @@ Created with a new `categories` tab. Users can edit them later.
 | 🚗 | Transportation | 🎮 | Entertainment |
 | 💡 | Utilities | 🧸 | Kids |
 | 🏠 | Housing | 🐾 | Pets |
-| | | 📦 | Other |
-- Schema changes must be applied to existing spreadsheets by a migration that runs on login.
+| 🧾 | Tax & Fees | 📦 | Other |
+
+**Tax & Fees** holds taxes and fees added on top of item prices (GST/HST/PST, TPS/TVQ, US sales tax, Japanese 外税, deposits, eco and bag fees, tips). The app relies on it, so it is added to existing spreadsheets on sign-in (§3).
 
 ## 5. Receipt parsing and validation
 
@@ -153,7 +162,7 @@ Created with a new `categories` tab. Users can edit them later.
 `POST /api/receipts` and `PUT /api/receipts/{id}` accept the same body and enforce:
 
 - `store`: 1–200 characters. `purchased_at`: a real date, at most 1 day in the future (time zones).
-- `currency`: a 3-letter code, upper-cased. Defaults to `DEFAULT_CURRENCY` (`USD`) when omitted.
+- `currency`: a 3-letter code, upper-cased. Defaults to `DEFAULT_CURRENCY` (`CAD`) when omitted.
 - `total`: 0 or more. Money values allow at most 3 decimal places; no NaN or infinity.
 - `items`: 1–200 items. `price` is the **unit price**; the line amount is `price × quantity`. `quantity` is greater than 0 (default 1). A negative `price` is allowed for discount lines.
 - Each item's `category` must exist in the user's `categories` tab. It is matched case-insensitively and saved with the tab's spelling.
@@ -162,16 +171,35 @@ Created with a new `categories` tab. Users can edit them later.
 
 Validation errors return 422 with FastAPI's `detail` list (`loc`, `msg`), which the frontend shows per field.
 
-### Claude parsing (phase 5)
+### Claude parsing (scan)
 
-Claude returns a draft receipt as JSON matching a Pydantic schema. The backend checks:
+Claude's answer (schema in `app/ai/receipt_parser.py`): `store`, `purchased_at` (`YYYY-MM-DD` or null), `currency` (ISO 4217 or null), `total`, and `items` of `name`, `quantity`, `unit_price`, `category`. Money values are decimal **strings**, converted to `Decimal` by the backend.
 
-- item prices (× quantity, minus discounts / plus tax) add up to the total
-- the date is valid
-- the currency is set (default `USD`)
-- each item's category exists in the user's `categories` tab
+How receipt lines map to items (in the prompt):
 
-Tests for the parser use sample OCR texts in several languages (at least English and Japanese).
+- `unit_price` is the price of one unit: "2 @ 1.99 3.98" is quantity 2, unit price 1.99. Weighed items are quantity 1 at the line amount, with the weight in the name.
+- **Discounts**, coupons, and points redeemed are items with a negative price, in the category of the product they discount.
+- **Taxes and fees added on top** of item prices are items in the **Tax & Fees** category (or Other if the user removed it). So category totals add up exactly to receipt totals.
+- **Tax already included** in prices (Japanese 内税, VAT summaries) is informational and is not an item.
+- `total` is the amount paid including tax; subtotals, tendered cash, change, and card lines are ignored.
+- "$" means the default currency (CAD) unless the receipt shows US dollars. Japanese era years: 令和N年 = 2018 + N.
+
+The backend normalizes the answer (amount formats like `4,99`, `¥1,080`, `100-`; unknown categories fall back to Other) and checks:
+
+| Check | Issue code | Blocking (asks for the photo) |
+| --- | --- | --- |
+| No text recognized | `no_text` | yes (skips Claude) |
+| No items | `no_items` | yes |
+| Total or an item amount unreadable | `total_unreadable`, `item_unreadable` | yes |
+| Σ quantity × price differs from the total by more than **2 of the currency's smallest unit** (0.02 CAD, ¥2, 0.002 KWD) | `total_mismatch` | yes |
+| Date missing or invalid / in the future (> 1 day) | `date_missing` / `date_future` | yes |
+| Date more than 10 years ago | `date_old` | no |
+| No currency found (default used) | `currency_defaulted` | no |
+| No store name | `store_missing` | no |
+
+Claude errors, refusals, and cut-off answers return 502 ("enter it by hand"); a missing `ANTHROPIC_API_KEY` returns 503.
+
+Tests: `tests/samples/` holds OCR texts in English (Ontario, HST), French (Québec, TPS/TVQ), Japanese (tax included, and tax added with a 令和 date), and US English (sales tax and tip), plus real Tesseract.js output for three of them. Unit tests use a fake Claude; `RUN_LIVE_CLAUDE=1 pytest tests/live` sends the samples to the real API (well under one cent per run).
 
 ## 6. API
 
@@ -182,7 +210,8 @@ Tests for the parser use sample OCR texts in several languages (at least English
 | GET | `/api/auth/me` | Signed-in user (email, name, picture, `spreadsheet_url`); 401 if not signed in |
 | GET | `/api/categories` | Active categories (`name`, `icon`) from the user's `categories` tab |
 | POST | `/api/auth/logout` | Clear the session cookie |
-| POST | `/api/receipts/scan` | OCR text (+ image on retry) → Claude → draft receipt |
+| POST | `/api/receipts/scan` | `{ocr_text, image?, image_media_type?}` → Claude → `{draft, issues, needs_image, used_image}`. Nothing is saved (§3, §5) |
+| PUT | `/api/receipts/{id}/image` | Body: the photo bytes (`image/jpeg`, `png`, or `webp`, ≤ 5 MB). Saves it to Drive and sets `image_link` |
 | POST | `/api/receipts` | Save a receipt + items (§5); returns 201 with the saved receipt |
 | GET | `/api/receipts` | Active receipts with their items, newest purchase first. Filters: `from`, `to` (`YYYY-MM-DD`, inclusive), `category` (receipts with at least one item in it) |
 | GET | `/api/receipts/{id}` | One receipt with its items; 404 if missing or deleted |
@@ -200,7 +229,7 @@ Receipt response:
 ```json
 {
   "receipt_id": "uuid", "store": "FreshMart", "purchased_at": "2026-10-01",
-  "total": "7.47", "currency": "USD", "image_link": "",
+  "total": "7.47", "currency": "CAD", "image_link": "",
   "created_at": "2026-10-13T09:30:00Z", "updated_at": "2026-10-13T09:30:00Z",
   "items": [{"item_id": "uuid", "name": "Milk", "quantity": "1", "price": "3.49", "category": "Groceries"}]
 }
@@ -221,9 +250,12 @@ Updates and deletes always re-read the tabs, so row numbers are correct even if 
 
 - Pages: Home, Scan (capture → review/edit → save), Transactions, Dashboard, Budget, Settings.
 - Built so far (routes via React Router):
-  - `/` Home: sign-in, spreadsheet link, categories.
-  - `/transactions`: receipts with their items, newest first; filters for month (default: this month, or "All time") and category, kept in the URL; totals per currency.
-  - `/receipts/new` and `/receipts/:id/edit`: the receipt form (store, date, currency, items with quantity, unit price and category, total). The total follows the items' sum until the user edits it. Edit also offers Delete.
+  - `/` Home: sign-in, Scan and Enter-by-hand buttons, spreadsheet link, categories.
+  - `/scan`: take or choose a photo, read it on the device with progress, send the text (and the photo once if needed), then open the review screen.
+  - `/transactions`: **all** receipts with their items by default, newest purchase date first, grouped under month headings with each month's total (per currency). Optional filters for one month ("This month" shortcut) and category, kept in the URL. After saving, the list opens unfiltered and scrolls to and highlights the saved receipt, so receipts dated in other months are never hidden.
+  - `/receipts/new` and `/receipts/:id/edit`: the receipt form (store, date, currency, items with quantity, unit price and category, total). The total follows the items' sum until the user edits it. Edit also offers Delete. The currency defaults to `DEFAULT_CURRENCY` (from `/api/auth/me`).
+  - Review screen: `/receipts/new` with a scan result in router state. It is pre-filled from the draft, lists the issues, shows the photo, keeps the scanned total as read, and uploads the photo after saving.
+  - Transactions show a 📷 link for receipts with a photo.
 - Money in the frontend is handled as decimal strings and bigint math (`src/lib/decimal.ts`), never JS floats.
 - PWA: manifest + service worker. Users can view past data offline (IndexedDB cache is optional). The service worker never serves `/api/*` from cache.
 - In development, Vite proxies `/api/*` to the backend. In production, `VITE_API_BASE_URL` points to the backend.
@@ -260,7 +292,7 @@ Real values go in `.env` files, which are git-ignored. Only `.env.example` files
 
 `VITE_*` variables are visible in the browser bundle, so they never hold secrets.
 
-External setup: an Anthropic API key, a Google Cloud project with the Sheets + Drive APIs enabled, a Google OAuth client of type **Web application** (with `GOOGLE_REDIRECT_URI` under "Authorized redirect URIs"), and a Cloud Vision key (web OCR fallback only). The frontend does not need the Google client ID, because the backend runs the whole OAuth flow.
+External setup: an Anthropic API key, a Google Cloud project with the Sheets + Drive APIs enabled, a Google OAuth client of type **Web application** (with `GOOGLE_REDIRECT_URI` under "Authorized redirect URIs"), and nothing for web OCR (Tesseract.js runs in the browser). The frontend does not need the Google client ID, because the backend runs the whole OAuth flow.
 
 ## 10. Development phases
 
@@ -270,16 +302,15 @@ External setup: an Anthropic API key, a Google Cloud project with the Sheets + D
 | 2 | Auth: Google Sign-In (`drive.file`) | Done |
 | 3 | Storage: create the LoonieToonie spreadsheet + tabs on first login; `Repository` interface + `SheetsRepository` | Done |
 | 4 | Receipts CRUD (manual entry first) | Done |
-| 5 | Scan flow: Capacitor ML Kit OCR + Claude parsing + review page | |
+| 5 | Scan flow: on-device OCR (Tesseract.js on web; ML Kit moves to phase 9) + Claude parsing + review page | Done |
 | 6 | Dashboard & budgets (+ on-device cache if loading is slow; storage stage 2) | |
 | 7 | Chatbot | |
 | 8 | CSV export | |
-| 9 | Capacitor Android build (needs Android Studio locally) | |
+| 9 | Capacitor Android build (needs Android Studio locally), including ML Kit OCR behind `recognizeReceipt()` | |
 | 10 | Later: bank/card linking (Plaid / Flinks) with an encrypted token store (storage stage 3), saving/investment suggestions | |
 
 ## 11. Open questions
 
 To be decided in the phase where they first matter:
 
-- **Phase 5:** the exact Claude JSON schema for a draft receipt; how discounts and tax lines are represented; rounding tolerance for the total check; which receipt languages ship first.
 - **Phase 6:** how "saved amount" is defined (budget minus actual, or income minus spending).

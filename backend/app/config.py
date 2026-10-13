@@ -4,6 +4,9 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Used when a receipt has no currency. Users can change it per receipt on the review screen.
+DEFAULT_CURRENCY = "CAD"
+
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 # Absolute paths so settings load the same way whatever the working directory.
 # backend/.env is listed last, so it overrides the repo-root .env.
@@ -31,7 +34,7 @@ class Settings(BaseSettings):
     session_secret: str = ""
     session_max_age_days: int = 30
 
-    default_currency: str = "USD"
+    default_currency: str = DEFAULT_CURRENCY
 
     @property
     def cookie_secure(self) -> bool:

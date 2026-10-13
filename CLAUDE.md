@@ -47,5 +47,5 @@ Working rules for Claude Code on **LoonieToonie**, a household expense app (scan
 
 - Backend: type hints everywhere; Pydantic models for requests, responses, and the Claude JSON schema; pytest for tests. Test the receipt parser with sample OCR texts in several languages.
 - Frontend: TypeScript strict mode, functional components and hooks.
-- Money: decimal values with an explicit currency. Never use floats for totals in calculations. Default currency is `USD`.
+- Money: decimal values with an explicit currency. Never use floats for totals in calculations. Default currency is `CAD`.
 - Dates: ISO 8601 (`YYYY-MM-DD` for purchase dates).

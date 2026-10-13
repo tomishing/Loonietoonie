@@ -28,6 +28,10 @@ The backend also reads a repo-root `.env`; values in `backend/.env` take precede
 5. Add a session secret:
    `python3 -c "import secrets; print(secrets.token_urlsafe(48))"` → `SESSION_SECRET=...`
 
+### Receipt scanning
+
+Scanning needs `ANTHROPIC_API_KEY` in `.env`. Receipts are read by `claude-haiku-5-5` (`ANTHROPIC_RECEIPT_MODEL`). OCR runs in the browser with Tesseract.js, which downloads English, French, and Japanese language data the first time you scan. The default currency is CAD (`DEFAULT_CURRENCY`).
+
 ## Run the backend
 
 With Docker:
@@ -63,5 +67,6 @@ The first sign-in creates a **LoonieToonie** folder in your Google Drive with a 
 
 ```bash
 cd backend && .venv/bin/ruff check . && .venv/bin/mypy --strict app && .venv/bin/pytest
+cd backend && RUN_LIVE_CLAUDE=1 .venv/bin/pytest tests/live -v   # sample receipts through the real Claude API (< 1 cent)
 cd frontend && npm run lint && npm test && npm run build && npm run preview   # production build with service worker
 ```

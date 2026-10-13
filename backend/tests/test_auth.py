@@ -162,6 +162,7 @@ def test_me_returns_user_without_tokens(client: TestClient, monkeypatch: pytest.
         "name": "Ann",
         "picture": "https://example.com/a.png",
         "spreadsheet_url": f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}",
+        "default_currency": "CAD",
     }
 
 

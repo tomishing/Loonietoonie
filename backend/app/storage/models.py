@@ -4,6 +4,8 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, Field, StringConstraints, field_validator
 
+from app.config import DEFAULT_CURRENCY
+
 MAX_MONEY_DECIMALS = 3
 
 
@@ -38,7 +40,7 @@ class ReceiptDraft(BaseModel):
     store: Text
     purchased_at: date
     total: Annotated[Money, Field(ge=0, le=100_000_000)]
-    currency: str = "USD"
+    currency: str = DEFAULT_CURRENCY
     items: list[ItemDraft] = Field(min_length=1, max_length=200)
 
     @field_validator("currency")
@@ -46,7 +48,7 @@ class ReceiptDraft(BaseModel):
     def _currency_code(cls, value: str) -> str:
         code = value.strip().upper()
         if len(code) != 3 or not code.isascii() or not code.isalpha():
-            raise ValueError("Use a 3-letter currency code such as USD, CAD, or JPY")
+            raise ValueError("Use a 3-letter currency code such as CAD, USD, or JPY")
         return code
 
 

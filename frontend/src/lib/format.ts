@@ -18,6 +18,15 @@ export function formatDate(isoDate: string): string {
   )
 }
 
+/** Formats a YYYY-MM month for headings, e.g. "October 2026". */
+export function formatMonth(month: string): string {
+  const [year, monthNumber] = month.split('-').map(Number)
+  if (!year || !monthNumber) return month
+  return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'long' }).format(
+    new Date(year, monthNumber - 1, 1),
+  )
+}
+
 /** Today's date in the user's time zone as YYYY-MM-DD. */
 export function todayIso(): string {
   const now = new Date()

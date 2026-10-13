@@ -40,6 +40,7 @@ class UserResponse(BaseModel):
     name: str | None
     picture: str | None
     spreadsheet_url: str
+    default_currency: str
 
 
 def _require_auth_config(settings: Settings) -> None:
@@ -159,12 +160,13 @@ def callback(
 
 
 @router.get("/me", response_model=UserResponse)
-def me(user: Annotated[SessionData, Depends(get_current_user)]) -> UserResponse:
+def me(user: Annotated[SessionData, Depends(get_current_user)], settings: SettingsDep) -> UserResponse:
     return UserResponse(
         email=user.email,
         name=user.name,
         picture=user.picture,
         spreadsheet_url=SPREADSHEET_URL.format(user.spreadsheet_id),
+        default_currency=settings.default_currency,
     )
 
 

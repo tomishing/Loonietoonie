@@ -1,19 +1,25 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import {
   createReceipt,
   deleteReceipt,
   errorMessages,
   getReceipt,
   updateReceipt,
+  uploadReceiptImage,
   type ReceiptInput,
+  type ScanIssue,
+  type ScanResult,
 } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 import { useCategories } from '../hooks/useCategories'
 import { formatDecimal, lineTotal, parseDecimal, sum } from '../lib/decimal'
 import { formatMoney, todayIso } from '../lib/format'
+import type { ScanReviewState } from './ScanPage'
+import type { TransactionsLocationState } from './TransactionsPage'
 
-const DEFAULT_CURRENCY = 'USD'
-const COMMON_CURRENCIES = ['USD', 'CAD', 'JPY', 'EUR', 'GBP', 'AUD', 'CNY', 'KRW', 'MXN']
+const FALLBACK_CURRENCY = 'CAD'
+const COMMON_CURRENCIES = ['CAD', 'USD', 'JPY', 'EUR', 'GBP', 'AUD', 'CNY', 'KRW', 'MXN']
 
 interface ItemRow {
   key: number
@@ -35,13 +41,34 @@ interface FormState {
 let nextKey = 1
 const newItem = (): ItemRow => ({ key: nextKey++, name: '', quantity: '1', price: '', category: '' })
 
-const emptyForm = (): FormState => ({
+const emptyForm = (currency: string): FormState => ({
   store: '',
   purchasedAt: todayIso(),
-  currency: DEFAULT_CURRENCY,
+  currency,
   total: '',
   items: [newItem()],
 })
+
+/** Form pre-filled from a scan. Unreadable values stay empty for the user to fill in. */
+const formFromScan = ({ draft }: ScanResult): FormState => ({
+  store: draft.store,
+  purchasedAt: draft.purchased_at ?? todayIso(),
+  currency: draft.currency,
+  total: draft.total ?? '',
+  items: draft.items.length
+    ? draft.items.map((item) => ({
+        key: nextKey++,
+        name: item.name,
+        quantity: item.quantity ?? '1',
+        price: item.price ?? '',
+        category: item.category,
+      }))
+    : [newItem()],
+})
+
+function isScanReview(state: unknown): state is ScanReviewState {
+  return typeof state === 'object' && state !== null && 'scan' in state && 'image' in state
+}
 
 function itemsTotal(items: ItemRow[]): bigint | null {
   const lines = items.map((item) => lineTotal(item.quantity, item.price))
@@ -52,16 +79,27 @@ export function ReceiptFormPage() {
   const { receiptId } = useParams()
   const isEdit = receiptId !== undefined
   const navigate = useNavigate()
+  const location = useLocation()
   const categories = useCategories()
+  const { user } = useAuth()
+  const defaultCurrency = user?.default_currency ?? FALLBACK_CURRENCY
 
-  const [form, setForm] = useState<FormState>(emptyForm)
+  // A scan arrives through router state from the Scan page.
+  const [review] = useState<ScanReviewState | null>(() =>
+    !isEdit && isScanReview(location.state) ? location.state : null,
+  )
+  const [form, setForm] = useState<FormState>(() => (review ? formFromScan(review.scan) : emptyForm(defaultCurrency)))
   // While false, the total follows the sum of the items. Typing in the total field stops that.
-  const [totalEdited, setTotalEdited] = useState(false)
+  // A scanned total is kept as read, so a mismatch with the items stays visible.
+  const [totalEdited, setTotalEdited] = useState(review !== null)
+  const [photoUrl] = useState(() => (review ? URL.createObjectURL(review.image) : null))
   const [loadError, setLoadError] = useState<string[] | null>(null)
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const errorRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => () => (photoUrl ? URL.revokeObjectURL(photoUrl) : undefined), [photoUrl])
 
   useEffect(() => {
     if (!isEdit) return
@@ -137,7 +175,16 @@ export function ReceiptFormPage() {
     setErrors([])
     try {
       const saved = isEdit ? await updateReceipt(receiptId, input) : await createReceipt(input)
-      navigate(`/transactions?month=${saved.purchased_at.slice(0, 7)}`)
+      let notice: string | undefined
+      if (review) {
+        try {
+          await uploadReceiptImage(saved.receipt_id, review.image)
+        } catch {
+          notice = "The receipt was saved, but its photo couldn't be uploaded to Google Drive."
+        }
+      }
+      const state: TransactionsLocationState = { highlight: saved.receipt_id, notice }
+      navigate('/transactions', { state })
     } catch (error) {
       showErrors(errorMessages(error))
     } finally {
@@ -150,7 +197,7 @@ export function ReceiptFormPage() {
     setSaving(true)
     try {
       await deleteReceipt(receiptId)
-      navigate(`/transactions?month=${form.purchasedAt.slice(0, 7)}`)
+      navigate('/transactions')
     } catch (error) {
       showErrors(errorMessages(error))
       setSaving(false)
@@ -173,13 +220,15 @@ export function ReceiptFormPage() {
     )
   }
 
-  const currency = form.currency.trim().toUpperCase() || DEFAULT_CURRENCY
+  const currency = form.currency.trim().toUpperCase() || defaultCurrency
 
   return (
     <section className="page">
       <div className="page-title">
-        <h1>{isEdit ? 'Edit receipt' : 'Add a receipt'}</h1>
+        <h1>{isEdit ? 'Edit receipt' : review ? 'Check the receipt' : 'Add a receipt'}</h1>
       </div>
+
+      {review && <ScanSummary issues={review.scan.issues} photoUrl={photoUrl} />}
 
       <form className="receipt-form" onSubmit={handleSubmit}>
         <div className="form-grid">
@@ -366,5 +415,31 @@ export function ReceiptFormPage() {
         </div>
       </form>
     </section>
+  )
+}
+
+function ScanSummary({ issues, photoUrl }: { issues: ScanIssue[]; photoUrl: string | null }) {
+  return (
+    <div className="scan-summary">
+      {photoUrl && (
+        <a href={photoUrl} target="_blank" rel="noreferrer" className="scan-thumb">
+          <img src={photoUrl} alt="Scanned receipt" />
+        </a>
+      )}
+      <div>
+        {issues.length === 0 ? (
+          <p className="notice notice-ok">Everything adds up. Check the details, then save.</p>
+        ) : (
+          <div className="notice notice-warn" role="status">
+            <p>Please check these before saving:</p>
+            <ul>
+              {issues.map((issue) => (
+                <li key={issue.code + issue.message}>{issue.message}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatMoney, monthRange } from './format'
+import { formatMoney, formatMonth, monthRange } from './format'
 
 describe('monthRange', () => {
   it('covers the whole month', () => {
@@ -10,6 +10,13 @@ describe('monthRange', () => {
 
   it('rejects other input', () => {
     expect(monthRange('all')).toBeNull()
+  })
+})
+
+describe('formatMonth', () => {
+  it('names the month and year', () => {
+    expect(formatMonth('2026-06')).toMatch(/2026/)
+    expect(formatMonth('bad')).toBe('bad')
   })
 })
 

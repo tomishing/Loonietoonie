@@ -1,1 +1,1 @@
-"""Google Drive receipt image storage in LoonieToonie/receipts/ (phase 5)."""
+"""Receipt photos in Google Drive (LoonieToonie/receipts/), used by the storage layer."""

@@ -1,0 +1,14 @@
+FRESHCO #1234
+123 QUEEN ST W TORONTO ON
+(416) 555-0199
+10/05/2026 14:32
+MILK 2% 4L            6.49
+BANANAS
+ 0.854 kg @ $1.74/kg  1.49
+DISH SOAP             4.99 H
+COUPON DISH SOAP     -1.00 H
+SUBTOTAL             11.97
+HST 13% ON 3.99       0.52
+TOTAL                12.49
+VISA ************1234 12.49
+CHANGE                0.00

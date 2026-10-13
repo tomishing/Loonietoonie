@@ -13,11 +13,12 @@ export class ApiError extends Error {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const isBlob = body instanceof Blob
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
     credentials: 'include',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: body === undefined ? undefined : { 'Content-Type': isBlob ? body.type : 'application/json' },
+    body: body === undefined ? undefined : isBlob ? body : JSON.stringify(body),
   })
   if (!response.ok) {
     let detail: unknown = null
@@ -104,6 +105,7 @@ export interface User {
   name: string | null
   picture: string | null
   spreadsheet_url: string
+  default_currency: string
 }
 
 /** The signed-in user, or null when there is no valid session. */
@@ -189,6 +191,51 @@ export function createReceipt(input: ReceiptInput): Promise<Receipt> {
 
 export function updateReceipt(receiptId: string, input: ReceiptInput): Promise<Receipt> {
   return apiPut<Receipt>(`/api/receipts/${encodeURIComponent(receiptId)}`, input)
+}
+
+/** Saves the receipt photo to the user's Drive (LoonieToonie/receipts/). */
+export function uploadReceiptImage(receiptId: string, image: Blob): Promise<Receipt> {
+  return apiPut<Receipt>(`/api/receipts/${encodeURIComponent(receiptId)}/image`, image)
+}
+
+// --- scanning ---------------------------------------------------------------
+
+export interface ScanItem {
+  name: string
+  quantity: string | null
+  price: string | null
+  category: string
+}
+
+export interface ScanDraft {
+  store: string
+  purchased_at: string | null
+  currency: string
+  total: string | null
+  items: ScanItem[]
+}
+
+export interface ScanIssue {
+  code: string
+  message: string
+}
+
+export interface ScanResult {
+  draft: ScanDraft
+  issues: ScanIssue[]
+  /** The reading looks wrong: send the photo once so Claude can look at it. */
+  needs_image: boolean
+  used_image: boolean
+}
+
+export function scanReceipt(
+  ocrText: string,
+  image?: { base64: string; mediaType: string },
+): Promise<ScanResult> {
+  return apiPost<ScanResult>('/api/receipts/scan', {
+    ocr_text: ocrText,
+    ...(image ? { image: image.base64, image_media_type: image.mediaType } : {}),
+  })
 }
 
 export function deleteReceipt(receiptId: string): Promise<void> {

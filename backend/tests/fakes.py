@@ -33,6 +33,7 @@ class FakeSheetsApi:
     spreadsheets: dict[str, list[FakeSheet]] = field(default_factory=dict)
     calls: list[str] = field(default_factory=list)
     starter_sheet_title: str = "Sheet1"
+    uploads: dict[str, bytes] = field(default_factory=dict)
 
     # --- helpers for tests -------------------------------------------------
 
@@ -45,9 +46,8 @@ class FakeSheetsApi:
 
     @property
     def write_calls(self) -> list[str]:
-        return [
-            c for c in self.calls if c in ("create_file", "batch_update", "write_values", "append_values")
-        ]
+        writes = ("create_file", "batch_update", "write_values", "append_values", "upload_file")
+        return [c for c in self.calls if c in writes]
 
     # --- SheetsApi ---------------------------------------------------------
 
@@ -66,6 +66,13 @@ class FakeSheetsApi:
         if mime_type == SPREADSHEET_MIME_TYPE:
             self.spreadsheets[file_id] = [FakeSheet(sheet_id=0, title=self.starter_sheet_title)]
         return file_id
+
+    def upload_file(self, name: str, media_type: str, data: bytes, parent_id: str, marker: str) -> str:
+        self.calls.append("upload_file")
+        file_id = f"file-{len(self.files) + 1}"
+        self.files[file_id] = FakeFile(name, media_type, marker, parent_id)
+        self.uploads[file_id] = data
+        return f"https://drive.google.com/file/d/{file_id}/view"
 
     def get_sheets(self, spreadsheet_id: str) -> list[SheetInfo]:
         self.calls.append("get_sheets")

@@ -74,6 +74,13 @@ def update_receipt(repository: Repository, receipt_id: str, draft: ReceiptDraft)
     return updated
 
 
+def attach_image(repository: Repository, receipt_id: str, data: bytes, media_type: str) -> Receipt:
+    receipt = repository.attach_receipt_image(receipt_id, data, media_type)
+    if receipt is None:
+        raise ReceiptNotFoundError(receipt_id)
+    return receipt
+
+
 def delete_receipt(repository: Repository, receipt_id: str) -> None:
     if not repository.delete_receipt(receipt_id):
         raise ReceiptNotFoundError(receipt_id)

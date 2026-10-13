@@ -1,0 +1,9 @@
+JOE'S DINER
+55 MAIN ST, BUFFALO NY 14202
+10/11/26  7:45 PM
+2 COFFEE @ 2.50        5.00
+PANCAKES               9.95
+SUBTOTAL              14.95
+SALES TAX 8.75%        1.31
+TIP                    3.00
+TOTAL USD             19.26

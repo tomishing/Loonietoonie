@@ -52,8 +52,14 @@ DEFAULT_CATEGORIES: tuple[tuple[str, str], ...] = (
     ("Entertainment", "🎮"),
     ("Kids", "🧸"),
     ("Pets", "🐾"),
+    ("Tax & Fees", "🧾"),
     ("Other", "📦"),
 )
+
+TAX_CATEGORY = "Tax & Fees"
+# Categories the app relies on. Added to existing spreadsheets on sign-in unless a row
+# with that name already exists (a row the user soft-deleted counts, so it isn't re-added).
+REQUIRED_CATEGORIES: tuple[tuple[str, str], ...] = ((TAX_CATEGORY, "🧾"),)
 
 
 def utc_now_iso() -> str:

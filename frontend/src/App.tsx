@@ -3,6 +3,7 @@ import { Layout } from './components/Layout'
 import { RequireSignIn } from './components/RequireSignIn'
 import { HomePage } from './pages/HomePage'
 import { ReceiptFormPage } from './pages/ReceiptFormPage'
+import { ScanPage } from './pages/ScanPage'
 import { TransactionsPage } from './pages/TransactionsPage'
 import './App.css'
 
@@ -16,6 +17,14 @@ function App() {
           element={
             <RequireSignIn>
               <TransactionsPage />
+            </RequireSignIn>
+          }
+        />
+        <Route
+          path="scan"
+          element={
+            <RequireSignIn>
+              <ScanPage />
             </RequireSignIn>
           }
         />

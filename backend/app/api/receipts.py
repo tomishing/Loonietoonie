@@ -1,7 +1,8 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from starlette.concurrency import run_in_threadpool
 
 from app.config import Settings, get_settings
 from app.services import receipts as service
@@ -15,6 +16,8 @@ RepositoryDep = Annotated[Repository, Depends(get_repository)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 NOT_FOUND = "Receipt not found"
+IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp")
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 
 def _with_default_currency(draft: ReceiptDraft, settings: Settings) -> ReceiptDraft:
@@ -60,6 +63,24 @@ def update_receipt(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from exc
     except service.ReceiptValidationError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.errors) from exc
+
+
+@router.put("/{receipt_id}/image", response_model=Receipt)
+async def upload_receipt_image(receipt_id: str, request: Request, repository: RepositoryDep) -> Receipt:
+    """Save the receipt photo to Drive (LoonieToonie/receipts/). Body: the image bytes."""
+    media_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if media_type not in IMAGE_TYPES:
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Send a JPEG, PNG, or WebP image")
+    declared = request.headers.get("content-length")
+    if declared is not None and declared.isdigit() and int(declared) > MAX_IMAGE_BYTES:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, detail="The photo must be under 5 MB")
+    data = await request.body()
+    if not data or len(data) > MAX_IMAGE_BYTES:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, detail="The photo must be under 5 MB")
+    try:
+        return await run_in_threadpool(service.attach_image, repository, receipt_id, data, media_type)
+    except service.ReceiptNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from exc
 
 
 @router.delete("/{receipt_id}", status_code=status.HTTP_204_NO_CONTENT)

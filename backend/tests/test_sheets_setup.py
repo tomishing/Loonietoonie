@@ -47,7 +47,8 @@ def test_first_sign_in_seeds_default_categories() -> None:
 
     rows = api.sheet(spreadsheet_id, "categories").rows[1:]
     assert rows == [[name, icon, NOW, "FALSE"] for name, icon in DEFAULT_CATEGORIES]
-    assert len(rows) == 13
+    assert len(rows) == 14
+    assert ["Tax & Fees", "🧾", NOW, "FALSE"] in rows
 
 
 def test_first_sign_in_uses_few_api_writes() -> None:
@@ -113,8 +114,51 @@ def test_migration_adds_missing_tab_and_columns_and_keeps_data() -> None:
     assert items.rows[1] == ["i1", "r1", "Milk", "3.49", "Groceries"]
     assert api.sheet("sheet-1", "ocr_labels").rows == [list(TABS["ocr_labels"])]
     assert api.sheet("sheet-1", "My notes").rows == [["anything"]]
-    # categories tab already existed: the user's list is not reseeded
-    assert api.sheet("sheet-1", "categories").rows[1:] == [["Snacks", "🍪", NOW, "FALSE"]]
+    # categories tab already existed: the user's list is kept; only required categories are added
+    assert api.sheet("sheet-1", "categories").rows[1:] == [
+        ["Snacks", "🍪", NOW, "FALSE"],
+        ["Tax & Fees", "🧾", NOW, "FALSE"],
+    ]
+
+
+def existing_spreadsheet_with_categories(api: FakeSheetsApi, category_rows: list[list[str]]) -> None:
+    sheets = [FakeSheet(i, tab, rows=[list(columns)]) for i, (tab, columns) in enumerate(TABS.items())]
+    sheets[2] = FakeSheet(2, "categories", rows=[list(TABS["categories"]), *category_rows])
+    api.add_spreadsheet("sheet-1", sheets)
+
+
+def test_required_category_is_added_once() -> None:
+    api = FakeSheetsApi()
+    existing_spreadsheet_with_categories(api, [["Groceries", "🛒", NOW, "FALSE"]])
+
+    ensure_spreadsheet(api, NOW)
+    api.calls.clear()
+    ensure_spreadsheet(api, NOW)
+
+    names = [row[0] for row in api.sheet("sheet-1", "categories").rows[1:]]
+    assert names == ["Groceries", "Tax & Fees"]
+    assert api.write_calls == []
+
+
+def test_soft_deleted_required_category_is_not_re_added() -> None:
+    api = FakeSheetsApi()
+    existing_spreadsheet_with_categories(api, [["tax & fees", "🧾", NOW, "TRUE"]])
+
+    ensure_spreadsheet(api, NOW)
+
+    assert len(api.sheet("sheet-1", "categories").rows) == 2
+    assert api.write_calls == []
+
+
+def test_required_category_follows_user_column_order() -> None:
+    api = FakeSheetsApi()
+    sheets = [FakeSheet(i, tab, rows=[list(columns)]) for i, (tab, columns) in enumerate(TABS.items())]
+    sheets[2] = FakeSheet(2, "categories", rows=[["icon", "deleted", "name", "updated_at"]])
+    api.add_spreadsheet("sheet-1", sheets)
+
+    ensure_spreadsheet(api, NOW)
+
+    assert api.sheet("sheet-1", "categories").rows[1] == ["🧾", "FALSE", "Tax & Fees", NOW]
 
 
 def test_migration_widens_grid_when_new_columns_do_not_fit() -> None:

@@ -37,6 +37,13 @@ class Repository(Protocol):
         """
         ...
 
+    def attach_receipt_image(self, receipt_id: str, data: bytes, media_type: str) -> Receipt | None:
+        """Store a receipt photo (Drive: LoonieToonie/receipts/) and set the receipt's image_link.
+
+        Returns None if the receipt does not exist.
+        """
+        ...
+
     def delete_receipt(self, receipt_id: str) -> bool:
         """Soft-delete a receipt and its items. Returns False if it does not exist."""
         ...

@@ -18,7 +18,7 @@ def client() -> Iterator[TestClient]:
     api = FakeSheetsApi()
     spreadsheet_id = ensure_spreadsheet(api, "2026-10-13T00:00:00Z")
     repository = SheetsRepository(api, spreadsheet_id, TabReadCache())
-    app.dependency_overrides[get_settings] = lambda: make_settings(default_currency="CAD")
+    app.dependency_overrides[get_settings] = lambda: make_settings(default_currency="JPY")
     app.dependency_overrides[get_repository] = lambda: repository
     with TestClient(app) as test_client:
         yield test_client
@@ -60,7 +60,7 @@ def test_currency_defaults_to_setting(client: TestClient) -> None:
     data = body()
     del data["currency"]
 
-    assert client.post("/api/receipts", json=data).json()["currency"] == "CAD"
+    assert client.post("/api/receipts", json=data).json()["currency"] == "JPY"
 
 
 def test_numbers_are_accepted_and_returned_as_strings(client: TestClient) -> None:
