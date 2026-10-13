@@ -6,14 +6,19 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient
+from google.oauth2.credentials import Credentials
+from pydantic import BaseModel
 
 from app.auth import google
 from app.auth.session import OAUTH_STATE_COOKIE, SESSION_COOKIE, SessionData, seal, unseal
 from app.config import Settings, get_settings
 from app.main import app
+from app.storage import setup as storage_setup
+from app.storage.repository import StorageError
 
 SECRET = "s" * 40
 FRONTEND_URL = "http://localhost:5173"
+SPREADSHEET_ID = "sheet-123"
 
 
 def make_settings(**overrides: Any) -> Settings:
@@ -34,6 +39,19 @@ def client() -> Iterator[TestClient]:
     with TestClient(app, follow_redirects=False) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def fake_storage(monkeypatch: pytest.MonkeyPatch) -> list[Credentials]:
+    """Replace spreadsheet setup; records the credentials it was called with."""
+    calls: list[Credentials] = []
+
+    def prepare(credentials: Credentials) -> str:
+        calls.append(credentials)
+        return SPREADSHEET_ID
+
+    monkeypatch.setattr(storage_setup, "prepare_user_storage", prepare)
+    return calls
 
 
 def tokens(
@@ -126,6 +144,7 @@ def test_callback_success_sets_session_and_redirects_home(
     assert session is not None
     assert session.refresh_token == "refresh-1"
     assert session.email == "ann@example.com"
+    assert session.spreadsheet_id == SPREADSHEET_ID
     set_cookie = response.headers.get_list("set-cookie")
     session_cookie = next(c for c in set_cookie if c.startswith(f"{SESSION_COOKIE}="))
     assert "HttpOnly" in session_cookie
@@ -142,7 +161,29 @@ def test_me_returns_user_without_tokens(client: TestClient, monkeypatch: pytest.
         "email": "ann@example.com",
         "name": "Ann",
         "picture": "https://example.com/a.png",
+        "spreadsheet_url": f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}",
     }
+
+
+def test_callback_prepares_storage_with_access_token_from_sign_in(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, fake_storage: list[Credentials]
+) -> None:
+    sign_in(client, monkeypatch)
+
+    assert len(fake_storage) == 1
+    assert fake_storage[0].token == "access-1"
+
+
+def test_callback_reports_storage_failure(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    def failing_prepare(credentials: Credentials) -> str:
+        raise StorageError("Sheets API down")
+
+    monkeypatch.setattr(storage_setup, "prepare_user_storage", failing_prepare)
+
+    response = sign_in(client, monkeypatch)
+
+    assert response.headers["location"] == f"{FRONTEND_URL}/?auth_error=storage_error"
+    assert SESSION_COOKIE not in response.cookies
 
 
 def test_callback_rejects_wrong_state(client: TestClient) -> None:
@@ -204,8 +245,22 @@ def test_me_rejects_tampered_session(client: TestClient) -> None:
 
 
 def test_me_rejects_session_sealed_with_other_secret(client: TestClient) -> None:
-    session = SessionData(sub="user-1", email="ann@example.com", refresh_token="refresh-1")
+    session = SessionData(
+        sub="user-1", email="ann@example.com", refresh_token="refresh-1", spreadsheet_id=SPREADSHEET_ID
+    )
     client.cookies.set(SESSION_COOKIE, seal(session, "x" * 40))
+
+    assert client.get("/api/auth/me").status_code == 401
+
+
+def test_me_rejects_session_from_before_storage_setup(client: TestClient) -> None:
+    class OldSession(BaseModel):
+        sub: str
+        email: str
+        refresh_token: str
+
+    old = OldSession(sub="user-1", email="ann@example.com", refresh_token="refresh-1")
+    client.cookies.set(SESSION_COOKIE, seal(old, SECRET))
 
     assert client.get("/api/auth/me").status_code == 401
 

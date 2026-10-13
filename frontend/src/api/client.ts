@@ -41,6 +41,7 @@ export interface User {
   email: string
   name: string | null
   picture: string | null
+  spreadsheet_url: string
 }
 
 /** The signed-in user, or null when there is no valid session. */
@@ -53,6 +54,15 @@ export async function getCurrentUser(): Promise<User | null> {
     }
     throw error
   }
+}
+
+export interface Category {
+  name: string
+  icon: string
+}
+
+export function getCategories(): Promise<Category[]> {
+  return apiGet<Category[]>('/api/categories')
 }
 
 export function logout(): Promise<void> {

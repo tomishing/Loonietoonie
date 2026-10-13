@@ -57,6 +57,8 @@ npm run dev
 
 Open http://localhost:5173. In dev, `/api/*` is proxied to the backend on port 8000.
 
+The first sign-in creates a **LoonieToonie** folder in your Google Drive with a **LoonieToonie** spreadsheet inside (tabs: receipts, items, categories, budgets, settings, ocr_labels). The home page links to it and lists your categories.
+
 ## Tests and builds
 
 ```bash

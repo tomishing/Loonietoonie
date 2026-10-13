@@ -8,6 +8,7 @@ const SIGN_IN_ERRORS: Record<string, string> = {
     'LoonieToonie needs permission to create its own files in your Google Drive. Please sign in again and allow it.',
   invalid_state: 'Sign-in took too long or was interrupted. Please try again.',
   google_error: 'Google sign-in failed. Please try again.',
+  storage_error: "Signed in, but we couldn't set up your LoonieToonie spreadsheet in Google Drive. Please try again.",
 }
 
 /** Reads ?auth_error= left by the backend redirect, then removes it from the URL. */

@@ -1,1 +1,1 @@
-"""Repository protocol and implementations; the only path to user data (phase 3)."""
+"""Repository protocol and implementations; the only path to user data."""

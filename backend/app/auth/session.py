@@ -31,6 +31,8 @@ class SessionData(BaseModel):
     name: str | None = None
     picture: str | None = None
     refresh_token: str
+    # Sessions from before phase 3 lack this field, fail validation, and must sign in again.
+    spreadsheet_id: str
 
 
 def _fernet(secret: str) -> Fernet:

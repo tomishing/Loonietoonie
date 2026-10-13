@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from './auth/AuthContext'
+import { CategoryList } from './components/CategoryList'
 import './App.css'
 
 function App() {
@@ -53,6 +54,10 @@ function App() {
             Hi, <strong>{user.name ?? user.email}</strong>!
           </p>
           <p className="muted">{user.email}</p>
+          <a className="sheet-link" href={user.spreadsheet_url} target="_blank" rel="noreferrer">
+            📊 Open my LoonieToonie spreadsheet
+          </a>
+          <CategoryList />
           <button type="button" className="button button-secondary" onClick={handleSignOut}>
             Sign out
           </button>

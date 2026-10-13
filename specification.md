@@ -54,9 +54,12 @@ Google Sign-In uses the OAuth 2.0 authorization-code flow with PKCE, run entirel
 2. Scopes: `openid email profile https://www.googleapis.com/auth/drive.file`, with `access_type=offline` and `prompt=consent` so Google always returns a refresh token.
 3. Google redirects to `GET /api/auth/callback`. The backend checks `state`, exchanges the code (with the PKCE verifier), and verifies the ID token (signature, audience, issuer, expiry, verified email).
 4. Users can untick permissions on Google's consent screen. If `drive.file` was not granted, sign-in fails with `drive_permission_required`.
-5. The backend sets the session cookie and redirects to `FRONTEND_URL`. Failures redirect to `FRONTEND_URL/?auth_error=<reason>` (`access_denied`, `invalid_state`, `drive_permission_required`, `google_error`), and the frontend shows a friendly message.
+5. The backend finds or creates the user's spreadsheet and migrates it to the current schema (see *Storage setup* below).
+6. The backend sets the session cookie and redirects to `FRONTEND_URL`. Failures redirect to `FRONTEND_URL/?auth_error=<reason>` (`access_denied`, `invalid_state`, `drive_permission_required`, `google_error`, `storage_error`), and the frontend shows a friendly message.
 
-**Session storage (until storage stage 3):** there is no server-side session store. The session (`lt_session` cookie) holds the user's Google ID (`sub`), email, name, picture, and **refresh token**, encrypted and authenticated with Fernet using a key derived from `SESSION_SECRET`.
+**Session storage (until storage stage 3):** there is no server-side session store. The session (`lt_session` cookie) holds the user's Google ID (`sub`), email, name, picture, **refresh token**, and spreadsheet ID, encrypted and authenticated with Fernet using a key derived from `SESSION_SECRET`. Cookies from before phase 3 have no spreadsheet ID and are rejected, so those users sign in again.
+
+**Access tokens:** Google access tokens last about an hour. The backend keeps each one in server memory (keyed by a hash of the refresh token) until two minutes before it expires, then refreshes it. Nothing is written to disk; after a restart each user needs one extra refresh. The access token from sign-in seeds the cache.
 
 - Cookie flags: `HttpOnly`, `SameSite=Lax`, `Secure` outside development, 30-day lifetime (`SESSION_MAX_AGE_DAYS`). The server also rejects tokens older than that.
 - `GET /api/auth/me` returns only email, name, and picture. Tokens never reach JavaScript.
@@ -70,11 +73,32 @@ Google Sign-In uses the OAuth 2.0 authorization-code flow with PKCE, run entirel
 
 Routes and services access data only through the `Repository` protocol in `backend/app/storage/`. `SheetsRepository` is the current implementation. A local cache or `PostgresRepository` can be added later without changing business logic.
 
+Layers:
+
+| Module | Role |
+| --- | --- |
+| `app/storage/repository.py` | `Repository` protocol and `StorageError` (API returns 502 for it) |
+| `app/storage/sheets_repository.py` | `SheetsRepository`: reads tabs as rows keyed by header, so column order doesn't matter |
+| `app/storage/setup.py` | `prepare_user_storage()`, called on every sign-in |
+| `app/sheets/api.py` | `SheetsApi`: thin wrapper over the Drive and Sheets REST APIs (gspread's `HTTPClient`); tests use an in-memory fake |
+| `app/sheets/schema.py` | Tab names, columns, default categories |
+| `app/sheets/setup.py` | Find/create the spreadsheet and migrate its tabs |
+
 Sheets API quotas are about 60 reads + 60 writes per minute per user, so:
 
-- batch writes with `append_rows`; never write row by row in a loop
-- cache reads
+- batch writes (`values.batchUpdate` / `append_rows`); never write row by row in a loop
+- cache reads: each tab read is kept in server memory for 60 seconds per spreadsheet, and dropped when the backend writes to that tab. Edits made directly in the sheet show up within a minute.
+- the spreadsheet is opened by ID without fetching its metadata on every request
 - load tabs and compute summaries in Python (pandas); Sheets has no joins or SQL
+
+### Storage setup (every sign-in)
+
+1. Look for a non-trashed spreadsheet this app created, by the Drive app property `loonietoonie=spreadsheet`. `drive.file` only shows files the app created, and the marker means renaming or moving the file doesn't matter. If several exist, use the oldest.
+2. If none exists, find or create the Drive folder **LoonieToonie** (`loonietoonie=root-folder`) and create the **LoonieToonie** spreadsheet inside it.
+3. Migrate: add any missing tab, and append any missing column to the end of an existing tab's header row. Existing data, column order, and extra tabs or columns the user added are left alone. A new spreadsheet's empty starter tab ("Sheet1", or its localized name) becomes `receipts`. Header rows are frozen.
+4. When the `categories` tab is created, it is filled with the default categories (§4). An existing `categories` tab is never reseeded.
+
+First sign-in costs 2 Drive writes and 2 Sheets writes. Later sign-ins cost 2 reads and no writes when the schema is already current.
 
 ### Scan flow
 
@@ -105,6 +129,21 @@ Rules:
 - Money is stored as a decimal value with an explicit currency; calculations never use floats.
 - Purchase dates are `YYYY-MM-DD`.
 - `ocr_labels` records user corrections to model output, only if the user opts in.
+- Values are written as plain text (`RAW`), so dates, amounts, and `TRUE`/`FALSE` are stored exactly and are not reinterpreted by the spreadsheet's locale.
+
+### Default categories
+
+Created with a new `categories` tab. Users can edit them later.
+
+| Icon | Name | Icon | Name |
+| --- | --- | --- | --- |
+| 🛒 | Groceries | 💊 | Health |
+| 🍜 | Dining Out | 🧴 | Personal Care |
+| 🧻 | Household | 👕 | Clothing |
+| 🚗 | Transportation | 🎮 | Entertainment |
+| 💡 | Utilities | 🧸 | Kids |
+| 🏠 | Housing | 🐾 | Pets |
+| | | 📦 | Other |
 - Schema changes must be applied to existing spreadsheets by a migration that runs on login.
 
 ## 5. Receipt parsing and validation
@@ -124,7 +163,8 @@ Tests for the parser use sample OCR texts in several languages (at least English
 | --- | --- | --- |
 | GET | `/api/health` | Health check (phase 1) |
 | GET | `/api/auth/google`, `/api/auth/callback` | Google Sign-In (§3) |
-| GET | `/api/auth/me` | Signed-in user (email, name, picture); 401 if not signed in |
+| GET | `/api/auth/me` | Signed-in user (email, name, picture, `spreadsheet_url`); 401 if not signed in |
+| GET | `/api/categories` | Active categories (`name`, `icon`) from the user's `categories` tab |
 | POST | `/api/auth/logout` | Clear the session cookie |
 | POST | `/api/receipts/scan` | OCR text (+ image on retry) → Claude → draft receipt |
 | POST | `/api/receipts` | Save confirmed receipt + items |
@@ -183,7 +223,7 @@ External setup: an Anthropic API key, a Google Cloud project with the Sheets + D
 | --- | --- | --- |
 | 1 | Scaffold: `frontend/` (Vite React PWA + TS), `backend/` (FastAPI), Docker Compose, `.env.example` | Done |
 | 2 | Auth: Google Sign-In (`drive.file`) | Done |
-| 3 | Storage: create the LoonieToonie spreadsheet + tabs on first login; `Repository` interface + `SheetsRepository` | |
+| 3 | Storage: create the LoonieToonie spreadsheet + tabs on first login; `Repository` interface + `SheetsRepository` | Done |
 | 4 | Receipts CRUD (manual entry first) | |
 | 5 | Scan flow: Capacitor ML Kit OCR + Claude parsing + review page | |
 | 6 | Dashboard & budgets (+ on-device cache if loading is slow; storage stage 2) | |
@@ -196,6 +236,5 @@ External setup: an Anthropic API key, a Google Cloud project with the Sheets + D
 
 To be decided in the phase where they first matter:
 
-- **Phase 3:** the default category list and icons created on first login.
 - **Phase 5:** the exact Claude JSON schema for a draft receipt; how discounts and tax lines are represented; rounding tolerance for the total check; which receipt languages ship first.
 - **Phase 6:** how "saved amount" is defined (budget minus actual, or income minus spending).

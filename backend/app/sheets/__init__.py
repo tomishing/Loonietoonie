@@ -1,1 +1,1 @@
-"""gspread helpers used only by SheetsRepository (phase 3)."""
+"""gspread / Drive helpers used only by the storage layer (app/storage/)."""

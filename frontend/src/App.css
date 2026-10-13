@@ -69,3 +69,38 @@
 .avatar {
   border-radius: 50%;
 }
+
+.sheet-link {
+  margin-top: 4px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.categories {
+  margin-top: 16px;
+  max-width: 32rem;
+}
+
+.categories h2 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  color: var(--text-h);
+}
+
+.categories ul {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid var(--border);
+  font-size: 0.95rem;
+}

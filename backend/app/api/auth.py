@@ -20,7 +20,10 @@ from app.auth.session import (
     seal,
     unseal,
 )
+from app.auth.tokens import get_credentials, remember_access_token
 from app.config import Settings, get_settings
+from app.storage import setup as storage_setup
+from app.storage.repository import StorageError
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +32,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/{}"
+
+
 class UserResponse(BaseModel):
     email: str
     name: str | None
     picture: str | None
+    spreadsheet_url: str
 
 
 def _require_auth_config(settings: Settings) -> None:
@@ -120,12 +127,22 @@ def callback(
         logger.warning("Google did not return a refresh token for %s", user.sub)
         return _redirect_with_error(settings, "google_error")
 
+    # First sign-in creates the spreadsheet; later sign-ins migrate it to the current schema.
+    remember_access_token(tokens.refresh_token, tokens.access_token, tokens.expires_in)
+    try:
+        credentials = get_credentials(tokens.refresh_token, settings)
+        spreadsheet_id = storage_setup.prepare_user_storage(credentials)
+    except (google.GoogleAuthError, StorageError):
+        logger.warning("Could not prepare storage for %s", user.sub, exc_info=True)
+        return _redirect_with_error(settings, "storage_error")
+
     session = SessionData(
         sub=user.sub,
         email=user.email,
         name=user.name,
         picture=user.picture,
         refresh_token=tokens.refresh_token,
+        spreadsheet_id=spreadsheet_id,
     )
     response = RedirectResponse(f"{settings.frontend_url}/", status_code=status.HTTP_302_FOUND)
     response.set_cookie(
@@ -143,7 +160,12 @@ def callback(
 
 @router.get("/me", response_model=UserResponse)
 def me(user: Annotated[SessionData, Depends(get_current_user)]) -> UserResponse:
-    return UserResponse(email=user.email, name=user.name, picture=user.picture)
+    return UserResponse(
+        email=user.email,
+        name=user.name,
+        picture=user.picture,
+        spreadsheet_url=SPREADSHEET_URL.format(user.spreadsheet_id),
+    )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
