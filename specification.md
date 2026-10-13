@@ -148,6 +148,22 @@ Created with a new `categories` tab. Users can edit them later.
 
 ## 5. Receipt parsing and validation
 
+### Saving a receipt (manual entry and confirmed scans)
+
+`POST /api/receipts` and `PUT /api/receipts/{id}` accept the same body and enforce:
+
+- `store`: 1–200 characters. `purchased_at`: a real date, at most 1 day in the future (time zones).
+- `currency`: a 3-letter code, upper-cased. Defaults to `DEFAULT_CURRENCY` (`USD`) when omitted.
+- `total`: 0 or more. Money values allow at most 3 decimal places; no NaN or infinity.
+- `items`: 1–200 items. `price` is the **unit price**; the line amount is `price × quantity`. `quantity` is greater than 0 (default 1). A negative `price` is allowed for discount lines.
+- Each item's `category` must exist in the user's `categories` tab. It is matched case-insensitively and saved with the tab's spelling.
+- On edit, an `item_id` must belong to that receipt and appear once. Items without `item_id` are added; existing items left out are soft-deleted.
+- The total is what the user enters; it is **not** required to equal the items' sum (tax, fees). The form pre-fills it with the items' sum and shows any difference.
+
+Validation errors return 422 with FastAPI's `detail` list (`loc`, `msg`), which the frontend shows per field.
+
+### Claude parsing (phase 5)
+
 Claude returns a draft receipt as JSON matching a Pydantic schema. The backend checks:
 
 - item prices (× quantity, minus discounts / plus tax) add up to the total
@@ -167,19 +183,48 @@ Tests for the parser use sample OCR texts in several languages (at least English
 | GET | `/api/categories` | Active categories (`name`, `icon`) from the user's `categories` tab |
 | POST | `/api/auth/logout` | Clear the session cookie |
 | POST | `/api/receipts/scan` | OCR text (+ image on retry) → Claude → draft receipt |
-| POST | `/api/receipts` | Save confirmed receipt + items |
-| GET | `/api/receipts` | List (filters: date, category) |
-| PUT / DELETE | `/api/receipts/{id}` | Edit / soft-delete |
+| POST | `/api/receipts` | Save a receipt + items (§5); returns 201 with the saved receipt |
+| GET | `/api/receipts` | Active receipts with their items, newest purchase first. Filters: `from`, `to` (`YYYY-MM-DD`, inclusive), `category` (receipts with at least one item in it) |
+| GET | `/api/receipts/{id}` | One receipt with its items; 404 if missing or deleted |
+| PUT | `/api/receipts/{id}` | Replace a receipt's fields and items (§5) |
+| DELETE | `/api/receipts/{id}` | Soft-delete the receipt and its items; 204 |
 | GET / PUT | `/api/budgets` | Monthly budgets per category |
 | GET | `/api/summary?period=month` | Totals, by-category, budget vs actual, saved amount |
 | POST | `/api/chat` | Spending chatbot |
 | GET | `/api/export/csv` | CSV export |
 
-Request and response bodies are Pydantic models. Detailed schemas are added here as each endpoint is built.
+Request and response bodies are Pydantic models. Money values (`total`, `price`, `quantity`) are JSON **strings** in responses (e.g. `"3.49"`); requests accept strings or numbers. Storage problems return 502; an expired Google grant returns 401.
+
+Receipt response:
+
+```json
+{
+  "receipt_id": "uuid", "store": "FreshMart", "purchased_at": "2026-10-01",
+  "total": "7.47", "currency": "USD", "image_link": "",
+  "created_at": "2026-10-13T09:30:00Z", "updated_at": "2026-10-13T09:30:00Z",
+  "items": [{"item_id": "uuid", "name": "Milk", "quantity": "1", "price": "3.49", "category": "Groceries"}]
+}
+```
+
+### Sheets cost per call
+
+| Call | Reads | Writes |
+| --- | --- | --- |
+| List / get receipts | 0–2 (cached 60 s) | 0 |
+| Create | 0–2 | 2 appends (receipts, items) |
+| Update | 2 fresh reads | 1 batch rewrite + 1 append if items were added |
+| Delete | 2 fresh reads | 1 batch rewrite |
+
+Updates and deletes always re-read the tabs, so row numbers are correct even if the sheet was edited by hand. Rows are rewritten whole, keeping any extra columns the user added. Rows the backend can't parse (e.g. a hand-typed date that isn't `YYYY-MM-DD`) are skipped and logged.
 
 ## 7. Frontend
 
 - Pages: Home, Scan (capture → review/edit → save), Transactions, Dashboard, Budget, Settings.
+- Built so far (routes via React Router):
+  - `/` Home: sign-in, spreadsheet link, categories.
+  - `/transactions`: receipts with their items, newest first; filters for month (default: this month, or "All time") and category, kept in the URL; totals per currency.
+  - `/receipts/new` and `/receipts/:id/edit`: the receipt form (store, date, currency, items with quantity, unit price and category, total). The total follows the items' sum until the user edits it. Edit also offers Delete.
+- Money in the frontend is handled as decimal strings and bigint math (`src/lib/decimal.ts`), never JS floats.
 - PWA: manifest + service worker. Users can view past data offline (IndexedDB cache is optional). The service worker never serves `/api/*` from cache.
 - In development, Vite proxies `/api/*` to the backend. In production, `VITE_API_BASE_URL` points to the backend.
 - UI style: simple and friendly, with cute icons and a girl mascot character. The current icon is a placeholder.
@@ -224,7 +269,7 @@ External setup: an Anthropic API key, a Google Cloud project with the Sheets + D
 | 1 | Scaffold: `frontend/` (Vite React PWA + TS), `backend/` (FastAPI), Docker Compose, `.env.example` | Done |
 | 2 | Auth: Google Sign-In (`drive.file`) | Done |
 | 3 | Storage: create the LoonieToonie spreadsheet + tabs on first login; `Repository` interface + `SheetsRepository` | Done |
-| 4 | Receipts CRUD (manual entry first) | |
+| 4 | Receipts CRUD (manual entry first) | Done |
 | 5 | Scan flow: Capacitor ML Kit OCR + Claude parsing + review page | |
 | 6 | Dashboard & budgets (+ on-device cache if loading is slow; storage stage 2) | |
 | 7 | Chatbot | |

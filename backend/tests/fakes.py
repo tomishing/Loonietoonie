@@ -45,7 +45,9 @@ class FakeSheetsApi:
 
     @property
     def write_calls(self) -> list[str]:
-        return [c for c in self.calls if c in ("create_file", "batch_update", "write_values")]
+        return [
+            c for c in self.calls if c in ("create_file", "batch_update", "write_values", "append_values")
+        ]
 
     # --- SheetsApi ---------------------------------------------------------
 
@@ -120,6 +122,14 @@ class FakeSheetsApi:
                     while len(target) <= c:
                         target.append("")
                     target[c] = value
+
+    def append_values(self, spreadsheet_id: str, range_: str, rows: list[list[str]]) -> None:
+        self.calls.append("append_values")
+        title, _ = _split_range(range_)
+        sheet = self.sheet(spreadsheet_id, title)
+        while sheet.rows and not any(cell.strip() for cell in sheet.rows[-1]):
+            sheet.rows.pop()
+        sheet.rows.extend(list(row) for row in rows)
 
     def read_values(self, spreadsheet_id: str, range_: str) -> list[list[str]]:
         self.calls.append("read_values")

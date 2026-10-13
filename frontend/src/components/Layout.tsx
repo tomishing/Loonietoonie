@@ -1,0 +1,31 @@
+import { NavLink, Outlet } from 'react-router'
+import { useAuth } from '../auth/AuthContext'
+
+export function Layout() {
+  const { status } = useAuth()
+
+  return (
+    <div className="app">
+      <header className="app-header">
+        <NavLink to="/" className="brand">
+          <img src="/favicon.svg" alt="" width={32} height={32} />
+          <span>LoonieToonie</span>
+        </NavLink>
+        {status === 'signed-in' && (
+          <nav className="app-nav" aria-label="Main">
+            <NavLink to="/" end>
+              Home
+            </NavLink>
+            <NavLink to="/transactions">Transactions</NavLink>
+            <NavLink to="/receipts/new" className="nav-add">
+              + Add
+            </NavLink>
+          </nav>
+        )}
+      </header>
+      <main className="app-main">
+        <Outlet />
+      </main>
+    </div>
+  )
+}

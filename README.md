@@ -5,7 +5,7 @@ See `specification.md` for the full spec.
 
 ## Requirements
 
-- Node.js 20.19+ or 22.12+ and npm (required by Vite 8)
+- Node.js 22.22+ and npm (required by React Router 8 and Vite 8)
 - Python 3.12+
 - Docker (optional, for the backend container)
 
@@ -63,5 +63,5 @@ The first sign-in creates a **LoonieToonie** folder in your Google Drive with a 
 
 ```bash
 cd backend && .venv/bin/ruff check . && .venv/bin/mypy --strict app && .venv/bin/pytest
-cd frontend && npm run build && npm run preview   # production build with service worker
+cd frontend && npm run lint && npm test && npm run build && npm run preview   # production build with service worker
 ```

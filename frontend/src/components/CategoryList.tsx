@@ -1,27 +1,7 @@
-import { useEffect, useState } from 'react'
-import { getCategories, type Category } from '../api/client'
-
-type LoadState =
-  | { status: 'loading' }
-  | { status: 'loaded'; categories: Category[] }
-  | { status: 'error' }
+import { useCategories } from '../hooks/useCategories'
 
 export function CategoryList() {
-  const [state, setState] = useState<LoadState>({ status: 'loading' })
-
-  useEffect(() => {
-    let active = true
-    getCategories()
-      .then((categories) => {
-        if (active) setState({ status: 'loaded', categories })
-      })
-      .catch(() => {
-        if (active) setState({ status: 'error' })
-      })
-    return () => {
-      active = false
-    }
-  }, [])
+  const state = useCategories()
 
   if (state.status === 'loading') {
     return <p className="muted">Loading categories…</p>

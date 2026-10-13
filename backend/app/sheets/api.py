@@ -41,7 +41,13 @@ class SheetsApi(Protocol):
         """Write several ranges in one call. Values are stored exactly as given (RAW)."""
         ...
 
-    def read_values(self, spreadsheet_id: str, range_: str) -> list[list[str]]: ...
+    def append_values(self, spreadsheet_id: str, range_: str, rows: list[list[str]]) -> None:
+        """Append rows after the last row of the tab in one call. Values are stored as given (RAW)."""
+        ...
+
+    def read_values(self, spreadsheet_id: str, range_: str) -> list[list[str]]:
+        """Cell values as text. Numbers typed into the sheet come back unformatted (no currency signs)."""
+        ...
 
 
 class GoogleSheetsApi:
@@ -105,6 +111,26 @@ class GoogleSheetsApi:
             },
         )
 
+    def append_values(self, spreadsheet_id: str, range_: str, rows: list[list[str]]) -> None:
+        self._http.values_append(
+            spreadsheet_id,
+            range_,
+            params={"valueInputOption": "RAW", "insertDataOption": "INSERT_ROWS"},
+            body={"values": rows},
+        )
+
     def read_values(self, spreadsheet_id: str, range_: str) -> list[list[str]]:
-        response = self._http.values_get(spreadsheet_id, range_)
-        return [[str(cell) for cell in row] for row in response.get("values", [])]
+        response = self._http.values_get(
+            spreadsheet_id,
+            range_,
+            params={"valueRenderOption": "UNFORMATTED_VALUE", "dateTimeRenderOption": "FORMATTED_STRING"},
+        )
+        return [[_cell_text(cell) for cell in row] for row in response.get("values", [])]
+
+
+def _cell_text(cell: Any) -> str:
+    if isinstance(cell, bool):
+        return "TRUE" if cell else "FALSE"
+    if isinstance(cell, float) and cell.is_integer():
+        return str(int(cell))
+    return str(cell)
