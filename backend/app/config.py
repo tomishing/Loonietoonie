@@ -19,7 +19,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=ENV_FILES, env_file_encoding="utf-8", extra="ignore")
 
     app_env: str = "development"
-    frontend_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    # https://localhost is the Android app's WebView (Capacitor).
+    frontend_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost:5173", "https://localhost"]
+    )
     # Where the browser is sent after Google Sign-In finishes.
     frontend_url: str = "http://localhost:5173"
 
@@ -34,6 +37,8 @@ class Settings(BaseSettings):
     # Encrypts the session cookie (which holds the Google refresh token). 32+ characters.
     session_secret: str = ""
     session_max_age_days: int = 30
+    # Deep link the browser returns to after an Android sign-in.
+    app_redirect_uri: str = "com.loonietoonie.app://auth/callback"
 
     default_currency: str = DEFAULT_CURRENCY
 

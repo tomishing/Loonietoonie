@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router'
-import { errorMessages, exportCsvUrl, listReceipts, type Receipt } from '../api/client'
+import { errorMessages, exportCsvUrl, listReceipts, shareCsvExport, type Receipt } from '../api/client'
+import { isNativeApp } from '../platform'
 import { categoryIcon, useCategories, type CategoriesState } from '../hooks/useCategories'
 import { formatDecimal, lineTotal, parseDecimal } from '../lib/decimal'
 import { formatDate, formatMoney, formatMonth, monthRange, todayIso } from '../lib/format'
@@ -65,6 +66,13 @@ export function TransactionsPage() {
       active = false
     }
   }, [month, category, queryKey])
+
+  // The app's WebView can't download with the session token, so it fetches and shares the file instead.
+  const shareOnApp = (event: MouseEvent, kind: 'items' | 'receipts') => {
+    if (!isNativeApp) return
+    event.preventDefault()
+    shareCsvExport(kind, filters).catch(() => window.alert("Couldn't export the CSV. Please try again."))
+  }
 
   const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams)
@@ -149,11 +157,11 @@ export function TransactionsPage() {
             </p>
             <p className="export-links">
               Export CSV:{' '}
-              <a href={exportCsvUrl('items', filters)} download>
+              <a href={exportCsvUrl('items', filters)} download onClick={(event) => shareOnApp(event, 'items')}>
                 items
               </a>{' '}
               ·{' '}
-              <a href={exportCsvUrl('receipts', filters)} download>
+              <a href={exportCsvUrl('receipts', filters)} download onClick={(event) => shareOnApp(event, 'receipts')}>
                 receipts
               </a>
             </p>

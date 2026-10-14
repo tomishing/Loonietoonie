@@ -23,6 +23,8 @@ class OAuthState(BaseModel):
 
     state: str
     code_verifier: str
+    # Set when the sign-in was started by the Android app (S256 challenge of the app's verifier).
+    app_challenge: str | None = None
 
 
 class SessionData(BaseModel):
@@ -33,6 +35,20 @@ class SessionData(BaseModel):
     refresh_token: str
     # Sessions from before phase 3 lack this field, fail validation, and must sign in again.
     spreadsheet_id: str
+
+
+APP_HANDOFF_MAX_AGE_SECONDS = 2 * 60
+
+
+class AppHandoff(BaseModel):
+    """One-time code passed from the browser to the Android app through a deep link.
+
+    Only redeemable with the verifier matching `challenge`, which never leaves the app,
+    so another app that intercepts the deep link can't use it.
+    """
+
+    session: SessionData
+    challenge: str
 
 
 def _fernet(secret: str) -> Fernet:

@@ -6,10 +6,19 @@ from app.auth.session import SESSION_COOKIE, SessionData, unseal
 from app.config import Settings, get_settings
 
 
+def _bearer_token(request: Request) -> str | None:
+    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    return token.strip() if scheme.lower() == "bearer" and token.strip() else None
+
+
 def get_current_user(request: Request, settings: Annotated[Settings, Depends(get_settings)]) -> SessionData:
-    """Return the signed-in user, or respond 401."""
+    """Return the signed-in user, or respond 401.
+
+    The web app sends the session cookie; the Android app sends the same sealed session
+    as a bearer token (its WebView can't use the backend's cookies).
+    """
     session = unseal(
-        request.cookies.get(SESSION_COOKIE),
+        _bearer_token(request) or request.cookies.get(SESSION_COOKIE),
         SessionData,
         settings.session_secret,
         settings.session_max_age_days * 24 * 60 * 60,

@@ -1,4 +1,19 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+import { getAppToken } from '../auth/appAuth'
+import { isNativeApp } from '../platform'
+
+// In the Android app the backend is at an absolute URL. During development the phone
+// reaches this computer's backend through `adb reverse tcp:8000 tcp:8000`.
+const NATIVE_DEV_API_BASE_URL = 'http://localhost:8000'
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (isNativeApp ? NATIVE_DEV_API_BASE_URL : '')
+
+/** Web: the session cookie. Android app: the session token as a bearer header (no cookies). */
+async function withAuth(init: RequestInit = {}): Promise<RequestInit> {
+  if (!isNativeApp) return { ...init, credentials: 'include' }
+  const token = await getAppToken()
+  const headers = new Headers(init.headers)
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  return { ...init, headers, credentials: 'omit' }
+}
 
 export class ApiError extends Error {
   readonly status: number
@@ -14,12 +29,14 @@ export class ApiError extends Error {
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const isBlob = body instanceof Blob
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    credentials: 'include',
-    headers: body === undefined ? undefined : { 'Content-Type': isBlob ? body.type : 'application/json' },
-    body: body === undefined ? undefined : isBlob ? body : JSON.stringify(body),
-  })
+  const response = await fetch(
+    `${API_BASE_URL}${path}`,
+    await withAuth({
+      method,
+      headers: body === undefined ? undefined : { 'Content-Type': isBlob ? body.type : 'application/json' },
+      body: body === undefined ? undefined : isBlob ? body : JSON.stringify(body),
+    }),
+  )
   if (!response.ok) {
     let detail: unknown = null
     try {
@@ -246,8 +263,19 @@ export function logout(): Promise<void> {
   return apiPost<void>('/api/auth/logout')
 }
 
-/** Full-page navigation target that starts Google Sign-In on the backend. */
+/** Full-page navigation target that starts Google Sign-In on the backend (web). */
 export const LOGIN_URL = `${API_BASE_URL}/api/auth/google`
+
+/** Android: exchange the deep-link code and PKCE verifier for a session token. */
+export async function exchangeAppCode(code: string, verifier: string): Promise<string> {
+  const response = await fetch(`${API_BASE_URL}/api/auth/app/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, verifier }),
+  })
+  if (!response.ok) throw new ApiError('POST', '/api/auth/app/token', response.status, null)
+  return ((await response.json()) as { token: string }).token
+}
 
 // --- dashboard ----------------------------------------------------------------
 
@@ -318,13 +346,15 @@ export async function streamChat(
   onEvent: (event: ChatEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/chat`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages }),
-    signal,
-  })
+  const response = await fetch(
+    `${API_BASE_URL}/api/chat`,
+    await withAuth({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages }),
+      signal,
+    }),
+  )
   if (!response.ok || response.body === null) {
     let detail: unknown = null
     try {
@@ -351,6 +381,25 @@ export async function streamChat(
 }
 
 // --- export -------------------------------------------------------------------
+
+/** Android app: download a CSV export with the bearer token and open the share sheet (save, email, Drive…). */
+export async function shareCsvExport(kind: 'items' | 'receipts', filters: ReceiptFilters = {}): Promise<void> {
+  const url = exportCsvUrl(kind, filters)
+  const response = await fetch(url, await withAuth())
+  if (!response.ok) throw new ApiError('GET', '/api/export/csv', response.status, null)
+  const filename = /filename="([^"]+)"/.exec(response.headers.get('content-disposition') ?? '')?.[1] ?? `loonietoonie-${kind}.csv`
+  const [{ Filesystem, Directory, Encoding }, { Share }] = await Promise.all([
+    import('@capacitor/filesystem'),
+    import('@capacitor/share'),
+  ])
+  const saved = await Filesystem.writeFile({
+    path: filename,
+    data: await response.text(),
+    directory: Directory.Cache,
+    encoding: Encoding.UTF8,
+  })
+  await Share.share({ title: filename, files: [saved.uri] })
+}
 
 /** Download link for a CSV export: one row per item or per receipt, with the same filters as the list. */
 export function exportCsvUrl(kind: 'items' | 'receipts', filters: ReceiptFilters = {}): string {

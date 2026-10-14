@@ -67,6 +67,24 @@ Open http://localhost:5173. In dev, `/api/*` is proxied to the backend on port 8
 
 The first sign-in creates a **LoonieToonie** folder in your Google Drive with a **LoonieToonie** spreadsheet inside (tabs: receipts, items, categories, budgets, settings, ocr_labels). The home page links to it and lists your categories.
 
+## Android app (Capacitor)
+
+Needs Android Studio (Android SDK in `~/Android/Sdk`) and an Android phone with **USB debugging** on.
+
+```bash
+# 1. Backend running on this computer (docker compose up, or uvicorn), as above.
+# 2. Phone connected by USB. Let the phone reach this computer's backend as its own localhost:
+~/Android/Sdk/platform-tools/adb reverse tcp:8000 tcp:8000
+# 3. Build, install, and start the app on the phone:
+cd frontend
+npm run android:run        # or: npm run android:build, then open frontend/android in Android Studio
+```
+
+- Sign-in opens Google in the phone's browser and comes back to the app.
+- Run the `adb reverse` command again whenever you reconnect the phone or adb restarts. Otherwise the app says it can't reach the server.
+- OCR runs on the phone with Google ML Kit (English, French, Japanese).
+- To inspect the app's WebView, use desktop Chrome → `chrome://inspect` (debug builds).
+
 ## Tests and builds
 
 ```bash

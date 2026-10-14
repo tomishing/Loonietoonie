@@ -12,6 +12,8 @@ export default defineConfig(({ mode }) => {
       react(),
       VitePWA({
         registerType: 'autoUpdate',
+        // Registered in main.tsx for the web only (the Android app ships its files in the APK).
+        injectRegister: false,
         includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
         manifest: {
           name: 'LoonieToonie',

@@ -11,6 +11,7 @@ Working rules for Claude Code on **LoonieToonie**, a household expense app: scan
 | --- | --- | --- |
 | `frontend/` | Vite + React + TypeScript PWA (Capacitor later) | `npm run lint && npm test && npm run build` |
 | `backend/` | FastAPI (Python 3.12), venv in `backend/.venv` | `.venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv/bin/mypy --strict app && .venv/bin/pytest` |
+| `frontend/android/` | Capacitor Android app (`com.loonietoonie.app`), ML Kit OCR plugin | `npm run android:build` (from `frontend/`) |
 | root | `docker-compose.yml` (backend dev container) | `docker compose config -q` |
 
 ## Workflow

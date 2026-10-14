@@ -45,12 +45,16 @@ class GoogleUser(BaseModel):
     picture: str | None = None
 
 
+def pkce_challenge(verifier: str) -> str:
+    """S256 code challenge: base64url(sha256(verifier)) without padding."""
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
 def new_pkce_pair() -> tuple[str, str]:
     """Return (code_verifier, code_challenge) for the S256 PKCE method."""
     verifier = secrets.token_urlsafe(64)
-    digest = hashlib.sha256(verifier.encode("ascii")).digest()
-    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-    return verifier, challenge
+    return verifier, pkce_challenge(verifier)
 
 
 def build_authorization_url(settings: Settings, state: str, code_challenge: str) -> str:

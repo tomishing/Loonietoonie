@@ -1,6 +1,5 @@
 import base64
 import hashlib
-from collections.abc import Iterator
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -20,6 +19,8 @@ SECRET = "s" * 40
 FRONTEND_URL = "http://localhost:5173"
 SPREADSHEET_ID = "sheet-123"
 
+pytestmark = pytest.mark.usefixtures("fake_storage")
+
 
 def make_settings(**overrides: Any) -> Settings:
     values: dict[str, Any] = {
@@ -31,27 +32,6 @@ def make_settings(**overrides: Any) -> Settings:
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)  # type: ignore[call-arg]
-
-
-@pytest.fixture
-def client() -> Iterator[TestClient]:
-    app.dependency_overrides[get_settings] = lambda: make_settings()
-    with TestClient(app, follow_redirects=False) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture(autouse=True)
-def fake_storage(monkeypatch: pytest.MonkeyPatch) -> list[Credentials]:
-    """Replace spreadsheet setup; records the credentials it was called with."""
-    calls: list[Credentials] = []
-
-    def prepare(credentials: Credentials) -> str:
-        calls.append(credentials)
-        return SPREADSHEET_ID
-
-    monkeypatch.setattr(storage_setup, "prepare_user_storage", prepare)
-    return calls
 
 
 def tokens(

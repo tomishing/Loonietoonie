@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { getCurrentUser, LOGIN_URL, logout, type User } from '../api/client'
+import { API_BASE_URL, exchangeAppCode, getCurrentUser, LOGIN_URL, logout, type User } from '../api/client'
+import { isNativeApp } from '../platform'
+import { readCallback, setAppToken, startAppSignIn } from './appAuth'
 import { AuthContext, type AuthState, type AuthStatus } from './AuthContext'
 
 const SIGN_IN_ERRORS: Record<string, string> = {
@@ -11,7 +13,9 @@ const SIGN_IN_ERRORS: Record<string, string> = {
   storage_error: "Signed in, but we couldn't set up your LoonieToonie spreadsheet in Google Drive. Please try again.",
 }
 
-/** Reads ?auth_error= left by the backend redirect, then removes it from the URL. */
+const errorMessage = (code: string) => SIGN_IN_ERRORS[code] ?? SIGN_IN_ERRORS.google_error
+
+/** Reads ?auth_error= left by the backend redirect (web), then removes it from the URL. */
 function takeSignInError(): string | null {
   const url = new URL(window.location.href)
   const code = url.searchParams.get('auth_error')
@@ -20,13 +24,24 @@ function takeSignInError(): string | null {
   }
   url.searchParams.delete('auth_error')
   window.history.replaceState(null, '', url)
-  return SIGN_IN_ERRORS[code] ?? SIGN_IN_ERRORS.google_error
+  return errorMessage(code)
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading')
   const [user, setUser] = useState<User | null>(null)
-  const [signInError] = useState<string | null>(takeSignInError)
+  const [signInError, setSignInError] = useState<string | null>(takeSignInError)
+
+  // Re-reads the user after an app sign-in.
+  const refresh = useCallback(async () => {
+    try {
+      const current = await getCurrentUser()
+      setUser(current)
+      setStatus(current ? 'signed-in' : 'signed-out')
+    } catch {
+      setStatus('error')
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -44,12 +59,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Android: Google Sign-In finishes in the system browser and comes back as a deep link.
+  useEffect(() => {
+    if (!isNativeApp) return
+    let removed = false
+    let remove: (() => void) | undefined
+    void import('@capacitor/app').then(({ App }) =>
+      App.addListener('appUrlOpen', async ({ url }) => {
+        const result = await readCallback(url)
+        if (result === null) return
+        const { Browser } = await import('@capacitor/browser')
+        void Browser.close().catch(() => undefined)
+        if ('error' in result) {
+          setSignInError(errorMessage(result.error))
+          return
+        }
+        try {
+          await setAppToken(await exchangeAppCode(result.code, result.verifier))
+          setSignInError(null)
+          setStatus('loading')
+          await refresh()
+        } catch {
+          setSignInError(errorMessage('invalid_state'))
+        }
+      }).then((handle) => {
+        if (removed) void handle.remove()
+        else remove = () => void handle.remove()
+      }),
+    )
+    return () => {
+      removed = true
+      remove?.()
+    }
+  }, [refresh])
+
   const signIn = useCallback(() => {
-    window.location.assign(LOGIN_URL)
+    if (isNativeApp) {
+      setSignInError(null)
+      void startAppSignIn(API_BASE_URL)
+    } else {
+      window.location.assign(LOGIN_URL)
+    }
   }, [])
 
   const signOut = useCallback(async () => {
-    await logout()
+    if (isNativeApp) {
+      await setAppToken(null)
+    } else {
+      await logout()
+    }
     setUser(null)
     setStatus('signed-out')
   }, [])

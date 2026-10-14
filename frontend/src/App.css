@@ -1168,3 +1168,114 @@ label {
   color: var(--accent);
   font-weight: 600;
 }
+
+/* ---------- scanning screen ---------- */
+
+.scanning {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding-top: 28px;
+  text-align: center;
+}
+
+.scanning-photo {
+  position: relative;
+  overflow: hidden;
+  max-width: min(320px, 80vw);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.scanning-photo img {
+  display: block;
+  width: 100%;
+  max-height: 42vh;
+  object-fit: contain;
+  opacity: 0.85;
+}
+
+.scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: var(--accent);
+  box-shadow: 0 0 12px 4px rgba(255, 122, 162, 0.45);
+  animation: scan-sweep 1.8s ease-in-out infinite alternate;
+}
+
+@keyframes scan-sweep {
+  from {
+    top: 0;
+  }
+  to {
+    top: calc(100% - 3px);
+  }
+}
+
+.scanning-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(320px, 85vw);
+}
+
+.scanning-text h1 {
+  font-size: 1.35rem;
+}
+
+.scanning-mascot {
+  border-radius: 14px;
+  animation: bob 1.4s ease-in-out infinite;
+}
+
+@keyframes bob {
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.scan-progress {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.scan-progress span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+/* Unknown duration (waiting for the server): a segment sliding back and forth. */
+.scan-progress-busy span {
+  width: 35%;
+  animation: busy-slide 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes busy-slide {
+  from {
+    left: 0;
+  }
+  to {
+    left: 65%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-line,
+  .scanning-mascot,
+  .scan-progress-busy span {
+    animation: none;
+  }
+}

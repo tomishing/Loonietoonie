@@ -8,6 +8,16 @@ export interface PreparedImage {
   previewUrl: string
 }
 
+/** Converts a data: URL to a Blob without a network round trip. */
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const [header, data] = dataUrl.split(',', 2)
+  const mediaType = /^data:([^;,]+)/.exec(header)?.[1] ?? 'application/octet-stream'
+  const binary = atob(data)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type: mediaType })
+}
+
 /** Downsizes a photo (respecting EXIF rotation) and converts it to JPEG. */
 export async function prepareImage(file: Blob): Promise<PreparedImage> {
   const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
@@ -25,9 +35,9 @@ export async function prepareImage(file: Blob): Promise<PreparedImage> {
   context.drawImage(bitmap, 0, 0, width, height)
   bitmap.close()
 
-  const blob = await new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob((result) => (result ? resolve(result) : reject(new Error('Could not encode the photo'))), 'image/jpeg', JPEG_QUALITY),
-  )
+  // toDataURL, not toBlob: in the Android WebView toBlob takes ~4 s for the same JPEG (measured on a
+  // Pixel 8), while toDataURL takes well under 0.1 s.
+  const blob = dataUrlToBlob(canvas.toDataURL('image/jpeg', JPEG_QUALITY))
   return { blob, mediaType: 'image/jpeg', previewUrl: URL.createObjectURL(blob) }
 }
 

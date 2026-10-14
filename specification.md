@@ -29,7 +29,7 @@ The current goal is understanding real spending, not saving. How much users save
 | --- | --- | --- |
 | Frontend | React PWA (Vite) + TypeScript | `frontend/` |
 | Mobile wrapper | Capacitor (Android first, iOS later) | `frontend/android/` |
-| OCR | On-device: Google ML Kit (Android) / Apple Vision (iOS); web fallback: Cloud Vision or Tesseract.js | `frontend/src/ocr/` |
+| OCR | On-device: Google ML Kit (Android app, local Capacitor plugin) / Apple Vision (iOS, later); web/PWA: Tesseract.js | `frontend/src/ocr/`, `frontend/android/…/ReceiptOcrPlugin.java` |
 | Backend / API | Python · FastAPI | `backend/app/` |
 | AI parsing + chatbot | Anthropic Claude API (Haiku-class model for receipts) | `backend/app/ai/` |
 | Database | Google Sheets in the user's own Drive (`gspread`) | `backend/app/sheets/` |
@@ -71,7 +71,20 @@ Google Sign-In uses the OAuth 2.0 authorization-code flow with PKCE, run entirel
 - Changing `SESSION_SECRET` signs everyone out.
 - In stage 3 the refresh token moves to the encrypted server-side token store and the cookie keeps only a session reference.
 
-**Deployment:** the cookie is first-party, so in production the frontend must reach the API on the same site, e.g. a Vercel/Netlify rewrite from `/api/*` to the backend (set `VITE_API_BASE_URL` empty). The Capacitor app (phase 9) may need a bearer-token variant, since its WebView origin differs from the API.
+**Deployment:** the cookie is first-party, so in production the frontend must reach the API on the same site, e.g. a Vercel/Netlify rewrite from `/api/*` to the backend (set `VITE_API_BASE_URL` empty).
+
+### Android app sign-in (bearer token)
+
+Google refuses sign-in inside an app's WebView, and the WebView (origin `https://localhost`) can't use the backend's cookies. So the Android app signs in through the **system browser** and gets the same sealed session as a **bearer token**:
+
+1. The app creates a PKCE verifier (kept in app storage) and opens `GET /api/auth/google?app=android&challenge=<S256 challenge>` in the system browser (Custom Tabs). The challenge is stored in the `lt_oauth` state cookie.
+2. Google Sign-In runs as for the web (same redirect URI, same checks, storage setup).
+3. Instead of setting a cookie, the callback redirects to `com.loonietoonie.app://auth/callback?code=<handoff>` (`APP_REDIRECT_URI`). The handoff code is the session plus the challenge, sealed with `SESSION_SECRET`, valid for **2 minutes**. Errors go to the same deep link as `?error=<reason>`.
+4. Android opens the app (intent filter on that scheme/host/path). The app sends `POST /api/auth/app/token {code, verifier}`; the backend checks that SHA-256(verifier) matches the challenge and returns `{token, expires_in_days}`. An app that intercepts the deep link can't use the code without the verifier.
+5. The app stores the token with Capacitor Preferences (app-private storage; Android backup and device transfer are disabled for the app) and sends `Authorization: Bearer <token>` on every API call (`credentials: 'omit'`). The backend accepts a bearer token or the cookie (`get_current_user`); both expire after `SESSION_MAX_AGE_DAYS`.
+6. Signing out in the app deletes the token. CORS allows `https://localhost` (in `FRONTEND_ORIGINS` by default) with the `Authorization` header.
+
+**Development backend for the app:** the phone (USB) reaches this computer through `adb reverse tcp:8000 tcp:8000`, so the app calls `http://localhost:8000`, and Google's redirect to `http://localhost:8000/api/auth/callback` (already registered) also works in the phone's browser. Google doesn't accept LAN IPs as redirect URIs. The network security config allows plain HTTP only to `localhost`, `127.0.0.1`, and `10.0.2.2` (emulator); everything else is HTTPS-only. A release build needs an HTTPS backend URL in `VITE_API_BASE_URL`.
 
 ### Storage interface
 
@@ -107,10 +120,11 @@ First sign-in costs 2 Drive writes and 2 Sheets writes. Later sign-ins cost 3 re
 
 ### Scan flow
 
-1. The user takes or picks a receipt photo on the Scan page. The browser downsizes it to at most 2000 px on the long edge (JPEG).
+1. The user takes or picks a receipt photo on the Scan page. The browser downsizes it to at most 2000 px on the long edge (JPEG, encoded with `canvas.toDataURL`: `toBlob` takes ~4 s in the Android WebView). **Scanning starts immediately** (no extra button) and a full "Scanning your receipt…" screen appears as soon as the photo arrives and shows it with a scan line, the current stage (preparing the photo → reading the text → finding the items and prices → taking a closer look at the photo), progress, and Cancel. On failure the Scan page shows the error with Try again / Retake / Choose from gallery / Enter by hand.
 2. OCR runs **on the device** through one function, `recognizeReceipt()` in `frontend/src/ocr/`. Platform differences stay inside that folder.
    - Web/PWA: **Tesseract.js** with English, French, and Japanese language data (downloaded once, then cached by the browser).
-   - Android: Google ML Kit, added in phase 9. iOS later: Apple Vision.
+   - Android app: **Google ML Kit** text recognition v2 (bundled Latin and Japanese models, offline) in a local Capacitor plugin (`ReceiptOcr`). Both recognizers run; the Japanese result is used when it contains Japanese characters, otherwise the Latin one (better with French accents). The plugin returns lines with bounding boxes, and `frontend/src/ocr/rows.ts` rebuilds printed rows by vertical position, because ML Kit returns item names and prices as separate columns. iOS later: Apple Vision.
+   - The Scan page has **Take photo** (camera, `capture`) and **Choose from gallery** (Android's photo picker, which gives the app only the selected photo). The app declares no camera permission; the system camera app takes the photo. The manifest must declare `<queries>` for `android.media.action.IMAGE_CAPTURE`: on Android 11+ the app can't otherwise see the camera app, and Capacitor silently falls back to the gallery picker.
 3. The frontend sends **only the OCR text** to `POST /api/receipts/scan`.
 4. The backend asks Claude (`ANTHROPIC_RECEIPT_MODEL`, default `claude-haiku-5-5`) to read the text into a draft receipt. Output is **strict JSON** via structured outputs (`output_config.format` with a JSON schema whose `category` is an enum of the user's categories).
 5. The backend normalizes and validates the draft (§5). Nothing is saved.
@@ -254,7 +268,7 @@ Updates and deletes always re-read the tabs, so row numbers are correct even if 
 - Pages: Home, Scan (capture → review/edit → save), Transactions, Dashboard ("Patterns"), Ask (chatbot), Settings. A Budget page comes with the savings step (phase 10).
 - Built so far (routes via React Router):
   - `/` Home: sign-in, Scan and Enter-by-hand buttons, spreadsheet link, categories.
-  - `/scan`: take or choose a photo, read it on the device with progress, send the text (and the photo once if needed), then open the review screen.
+  - `/scan`: take or choose a photo; scanning starts at once on a "Scanning your receipt…" screen (on-device OCR, then the text, and the photo once if needed), then the review screen opens.
   - `/transactions`: **all** receipts with their items by default, newest purchase date first, grouped under month headings with each month's total (per currency). Optional filters for one month ("This month" shortcut) and category, kept in the URL. After saving, the list opens unfiltered and scrolls to and highlights the saved receipt, so receipts dated in other months are never hidden.
   - `/receipts/new` and `/receipts/:id/edit`: the receipt form (store, date, currency, items with quantity, unit price and category, total). The total follows the items' sum until the user edits it. Edit also offers Delete. The currency defaults to `DEFAULT_CURRENCY` (from `/api/auth/me`).
   - Review screen: `/receipts/new` with a scan result in router state. It is pre-filled from the draft, lists the issues, shows the photo, keeps the scanned total as read, and uploads the photo after saving.
@@ -323,6 +337,9 @@ Purpose: see actual spending patterns. Computed on the backend with pandas (`app
   - while another month loads, the previous one stays visible, dimmed
   - Recharts loads only when the dashboard opens (lazy route)
   - an on-device cache (storage stage 2) is not needed yet: the backend's 60-second read cache keeps the dashboard quick. Revisit if loading feels slow.
+- Android app (Capacitor 8, `frontend/android/`, app ID `com.loonietoonie.app`): the same React code. Differences are kept small:
+  - `src/platform.ts` (`isNativeApp`) chooses the bearer-token sign-in, ML Kit OCR, and CSV export through the share sheet (the WebView can't download with a token)
+  - the service worker is registered only on the web, since the app ships its files in the APK
 - PWA: manifest + service worker. Users can view past data offline (IndexedDB cache is optional). The service worker never serves `/api/*` from cache.
 - In development, Vite proxies `/api/*` to the backend. In production, `VITE_API_BASE_URL` points to the backend.
 - UI style: simple and friendly, with cute icons and a girl mascot character. The current icon is a placeholder.
@@ -353,8 +370,8 @@ Real values go in `.env` files, which are git-ignored. Only `.env.example` files
 
 | File | Variables |
 | --- | --- |
-| `backend/.env` (or repo-root `.env`; `backend/.env` wins) | `APP_ENV`, `FRONTEND_ORIGINS`, `FRONTEND_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_RECEIPT_MODEL`, `ANTHROPIC_CHAT_MODEL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `SESSION_SECRET` (32+ chars), `SESSION_MAX_AGE_DAYS`, `DEFAULT_CURRENCY` |
-| `frontend/.env` | `VITE_API_BASE_URL`, `VITE_DEV_BACKEND_URL` |
+| `backend/.env` (or repo-root `.env`; `backend/.env` wins) | `APP_ENV`, `FRONTEND_ORIGINS`, `FRONTEND_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_RECEIPT_MODEL`, `ANTHROPIC_CHAT_MODEL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `SESSION_SECRET` (32+ chars), `SESSION_MAX_AGE_DAYS`, `APP_REDIRECT_URI` (default `com.loonietoonie.app://auth/callback`), `DEFAULT_CURRENCY` |
+| `frontend/.env` | `VITE_API_BASE_URL` (the Android app defaults to `http://localhost:8000` when empty), `VITE_DEV_BACKEND_URL` |
 
 `VITE_*` variables are visible in the browser bundle, so they never hold secrets.
 
@@ -372,7 +389,7 @@ External setup: an Anthropic API key, a Google Cloud project with the Sheets + D
 | 6 | Dashboard: spending patterns (+ on-device cache if loading is slow; storage stage 2) | Done |
 | 7 | Chatbot ("Ask"): streamed answers from read-only spending tools | Done |
 | 8 | CSV export (items or receipts, current filters, injection-safe) | Done |
-| 9 | Capacitor Android build (needs Android Studio locally), including ML Kit OCR behind `recognizeReceipt()` | |
+| 9 | Capacitor Android app (`com.loonietoonie.app`): ML Kit OCR behind `recognizeReceipt()`, system-browser sign-in with bearer tokens, CSV via the share sheet, mascot icon | Done |
 | 10 | Later: savings step (monthly budgets per category with budget vs actual, saved amount, saving/investment suggestions); bank/card linking (Plaid / Flinks) with an encrypted token store (storage stage 3) | |
 
 ## 11. Open questions
