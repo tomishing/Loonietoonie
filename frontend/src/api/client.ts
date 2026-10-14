@@ -349,3 +349,14 @@ export async function streamChat(
   }
   if (buffer.trim()) onEvent(JSON.parse(buffer) as ChatEvent)
 }
+
+// --- export -------------------------------------------------------------------
+
+/** Download link for a CSV export: one row per item or per receipt, with the same filters as the list. */
+export function exportCsvUrl(kind: 'items' | 'receipts', filters: ReceiptFilters = {}): string {
+  const params = new URLSearchParams({ kind })
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) params.set(key, value)
+  }
+  return `${API_BASE_URL}/api/export/csv?${params}`
+}

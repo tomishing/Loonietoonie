@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router'
-import { errorMessages, listReceipts, type Receipt } from '../api/client'
+import { errorMessages, exportCsvUrl, listReceipts, type Receipt } from '../api/client'
 import { categoryIcon, useCategories, type CategoriesState } from '../hooks/useCategories'
 import { formatDecimal, lineTotal, parseDecimal } from '../lib/decimal'
 import { formatDate, formatMoney, formatMonth, monthRange, todayIso } from '../lib/format'
@@ -47,6 +47,9 @@ export function TransactionsPage() {
   const queryKey = `${month}|${category}`
   const [result, setResult] = useState<{ key: string; result: Result } | null>(null)
   const state: LoadState = result?.key === queryKey ? result.result : { status: 'loading' }
+
+  const range = month ? monthRange(month) : null
+  const filters = { from: range?.from, to: range?.to, category: category || undefined }
 
   useEffect(() => {
     let active = true
@@ -140,9 +143,21 @@ export function TransactionsPage() {
 
       {state.status === 'loaded' && state.receipts.length > 0 && (
         <>
-          <p className="summary">
-            {state.receipts.length} receipt{state.receipts.length === 1 ? '' : 's'} · {totalsByCurrency(state.receipts)}
-          </p>
+          <div className="summary-row">
+            <p className="summary">
+              {state.receipts.length} receipt{state.receipts.length === 1 ? '' : 's'} · {totalsByCurrency(state.receipts)}
+            </p>
+            <p className="export-links">
+              Export CSV:{' '}
+              <a href={exportCsvUrl('items', filters)} download>
+                items
+              </a>{' '}
+              ·{' '}
+              <a href={exportCsvUrl('receipts', filters)} download>
+                receipts
+              </a>
+            </p>
+          </div>
           {groupByMonth(state.receipts).map(([groupMonth, receipts]) => (
             <section key={groupMonth} className="month-group" aria-label={formatMonth(groupMonth)}>
               <h2 className="month-heading">

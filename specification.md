@@ -223,7 +223,7 @@ Tests: `tests/samples/` holds OCR texts in English (Ontario, HST), French (Québ
 | GET | `/api/summary?month=YYYY-MM&currency=CAD` | Spending patterns for one month and one currency (§7 Dashboard). Defaults: this month, `DEFAULT_CURRENCY` |
 | GET / PUT | `/api/budgets` | Later (savings step, phase 10): monthly budgets per category |
 | POST | `/api/chat` | Spending chatbot. Body: `{messages: [{role, content}]}` (text only, last one from the user, ≤ 40 messages, ≤ 4000 chars each). Streams newline-delimited JSON events (`text`, `status`, `reset`, `error`, `done`) (§7 Chat) |
-| GET | `/api/export/csv` | CSV export |
+| GET | `/api/export/csv` | CSV download (§7 Export). `kind=items` (default) or `receipts`; filters `from`, `to`, `category`, `currency` |
 
 Request and response bodies are Pydantic models. Money values (`total`, `price`, `quantity`) are JSON **strings** in responses (e.g. `"3.49"`); requests accept strings or numbers. Storage problems return 502; an expired Google grant returns 401.
 
@@ -258,8 +258,18 @@ Updates and deletes always re-read the tabs, so row numbers are correct even if 
   - `/transactions`: **all** receipts with their items by default, newest purchase date first, grouped under month headings with each month's total (per currency). Optional filters for one month ("This month" shortcut) and category, kept in the URL. After saving, the list opens unfiltered and scrolls to and highlights the saved receipt, so receipts dated in other months are never hidden.
   - `/receipts/new` and `/receipts/:id/edit`: the receipt form (store, date, currency, items with quantity, unit price and category, total). The total follows the items' sum until the user edits it. Edit also offers Delete. The currency defaults to `DEFAULT_CURRENCY` (from `/api/auth/me`).
   - Review screen: `/receipts/new` with a scan result in router state. It is pre-filled from the draft, lists the issues, shows the photo, keeps the scanned total as read, and uploads the photo after saving.
-  - Transactions show a 📷 link for receipts with a photo.
+  - Transactions show a 📷 link for receipts with a photo, and "Export CSV: items · receipts" links for the current filters.
 - Money in the frontend is handled as decimal strings and bigint math (`src/lib/decimal.ts`), never JS floats.
+
+### Export (CSV)
+
+`GET /api/export/csv` downloads the user's receipts for Excel, Numbers, or Google Sheets. Filename: `loonietoonie-<kind>-<today>.csv`.
+
+- `kind=items` (default): one row per item: `date, store, item, category, quantity, unit_price, amount (= quantity × unit_price), currency, receipt_total, receipt_id`. When a receipt's total differs from its items, a `(not itemized)` row keeps `amount` adding up to the receipt totals. With a `category` filter, only that category's items are included (and no `(not itemized)` rows).
+- `kind=receipts`: one row per receipt: `date, store, total, currency, items (count), categories, photo (Drive link), receipt_id`. A `category` filter keeps receipts that have at least one item in it.
+- Newest first; deleted rows are never exported. All currencies unless `currency` is given (each row says its currency; nothing is converted).
+- UTF-8 **with a byte-order mark**, so Excel shows Japanese and French text correctly; `\r\n` line endings; ISO dates; amounts as plain decimals (`-1.00` for discounts).
+- **CSV injection:** free-text cells (store, item, category) starting with `=`, `+`, `-`, `@`, tab, or CR get a leading `'`, so spreadsheet apps show them as text instead of running them as formulas. Number and date columns are never altered.
 
 ### Chat ("Ask", `/ask`)
 
@@ -361,7 +371,7 @@ External setup: an Anthropic API key, a Google Cloud project with the Sheets + D
 | 5 | Scan flow: on-device OCR (Tesseract.js on web; ML Kit moves to phase 9) + Claude parsing + review page | Done |
 | 6 | Dashboard: spending patterns (+ on-device cache if loading is slow; storage stage 2) | Done |
 | 7 | Chatbot ("Ask"): streamed answers from read-only spending tools | Done |
-| 8 | CSV export | |
+| 8 | CSV export (items or receipts, current filters, injection-safe) | Done |
 | 9 | Capacitor Android build (needs Android Studio locally), including ML Kit OCR behind `recognizeReceipt()` | |
 | 10 | Later: savings step (monthly budgets per category with budget vs actual, saved amount, saving/investment suggestions); bank/card linking (Plaid / Flinks) with an encrypted token store (storage stage 3) | |
 

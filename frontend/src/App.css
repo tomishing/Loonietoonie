@@ -1145,3 +1145,26 @@ label {
   flex: none;
   white-space: nowrap;
 }
+
+.summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 12px;
+}
+
+.summary-row .summary {
+  margin: 0;
+}
+
+.export-links {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.export-links a {
+  color: var(--accent);
+  font-weight: 600;
+}
