@@ -82,21 +82,29 @@ class SheetsRepository:
 
     def list_categories(self) -> list[Category]:
         subcategories: dict[str, list[str]] = {}
+        descriptions: dict[str, dict[str, str]] = {}
         for row in _active(self._read("subcategories")):
             category = row.values.get("category", "").strip().casefold()
             name = row.values.get("name", "").strip()
             names = subcategories.setdefault(category, [])
             if category and name and name.casefold() not in {n.casefold() for n in names}:
                 names.append(name)
-        return [
-            Category(
-                name=row.values["name"].strip(),
-                icon=row.values.get("icon", "").strip(),
-                subcategories=subcategories.get(row.values["name"].strip().casefold(), []),
-            )
-            for row in _active(self._read("categories"))
-            if row.values.get("name", "").strip()
-        ]
+                description = row.values.get("description", "").strip()
+                if description:
+                    descriptions.setdefault(category, {})[name] = description
+        categories: list[Category] = []
+        for row in _active(self._read("categories")):
+            name = row.values.get("name", "").strip()
+            if name:
+                categories.append(
+                    Category(
+                        name=name,
+                        icon=row.values.get("icon", "").strip(),
+                        subcategories=subcategories.get(name.casefold(), []),
+                        descriptions=descriptions.get(name.casefold(), {}),
+                    )
+                )
+        return categories
 
     # --- receipts ------------------------------------------------------------
 

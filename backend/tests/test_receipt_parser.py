@@ -18,7 +18,12 @@ from app.storage.models import Category
 
 CATEGORIES = ["Groceries", "Tax & Fees", "Other"]
 CATEGORY_LIST = [
-    Category(name="Groceries", icon="", subcategories=["Produce", "Dairy & Eggs"]),
+    Category(
+        name="Groceries",
+        icon="",
+        subcategories=["Produce", "Dairy & Eggs"],
+        descriptions={"Dairy & Eggs": "Milk, cheese, eggs"},
+    ),
     Category(name="Tax & Fees", icon="", subcategories=["Sales Tax"]),
     Category(name="Other", icon=""),
 ]
@@ -87,7 +92,7 @@ def test_sends_text_only_request_with_strict_schema() -> None:
     assert content["type"] == "text"
     assert "MILK 5.00" in content["text"]
     assert "default currency is CAD" in content["text"]
-    assert "- Groceries: Produce; Dairy & Eggs" in content["text"]
+    assert "- Groceries:\n  - Produce\n  - Dairy & Eggs: Milk, cheese, eggs\n" in content["text"]
     assert "- Other (no subcategories)" in content["text"]
 
 

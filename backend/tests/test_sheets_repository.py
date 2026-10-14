@@ -78,8 +78,8 @@ def test_list_categories_attaches_subcategories() -> None:
             ["Pets", "🐾", "", "FALSE"],
         ],
         subcategory_rows=[
-            ["category", "name", "updated_at", "deleted"],
-            ["Groceries", "Produce", "", "FALSE"],
+            ["category", "name", "updated_at", "deleted", "description"],
+            ["Groceries", "Produce", "", "FALSE", "Fruit and veg"],
             ["groceries ", " Bakery", "", "FALSE"],  # matched case-insensitively, trimmed
             ["Groceries", "produce", "", "FALSE"],  # duplicate
             ["Groceries", "Old", "", "TRUE"],  # deleted
@@ -89,7 +89,12 @@ def test_list_categories_attaches_subcategories() -> None:
     )
 
     assert repo.list_categories() == [
-        Category(name="Groceries", icon="🛒", subcategories=["Produce", "Bakery"]),
+        Category(
+            name="Groceries",
+            icon="🛒",
+            subcategories=["Produce", "Bakery"],
+            descriptions={"Produce": "Fruit and veg"},
+        ),
         Category(name="Pets", icon="🐾"),
     ]
 

@@ -9,6 +9,7 @@ from app.sheets.schema import (
     FOLDER_MIME_TYPE,
     SPREADSHEET_MARKER,
     SPREADSHEET_MIME_TYPE,
+    SUBCATEGORY_DESCRIPTIONS,
     TABS,
 )
 from app.sheets.setup import ensure_spreadsheet, migrate_once
@@ -127,29 +128,42 @@ def test_migration_adds_missing_tab_and_columns_and_keeps_data() -> None:
     # the new subcategories tab starts with the defaults
     subcategories = api.sheet("sheet-1", "subcategories").rows
     assert subcategories[0] == list(TABS["subcategories"])
-    assert ["Groceries", "Fresh Fruit & Vegetables", NOW, "FALSE"] in subcategories
+    fruit = ("Groceries", "Fresh Fruit & Vegetables")
+    assert [*fruit, SUBCATEGORY_DESCRIPTIONS[fruit], NOW, "FALSE"] in subcategories
     assert len(subcategories) - 1 == sum(len(names) for names in DEFAULT_SUBCATEGORIES.values())
 
 
-def existing_spreadsheet_with_subcategories(api: FakeSheetsApi, rows: list[list[str]]) -> None:
+# The subcategories header as first shipped, before the description column.
+OLD_SUBCATEGORY_HEADER = ["category", "name", "updated_at", "deleted"]
+
+
+def existing_spreadsheet_with_subcategories(
+    api: FakeSheetsApi, rows: list[list[str]], header: list[str] = OLD_SUBCATEGORY_HEADER
+) -> None:
     sheets = [FakeSheet(i, tab, rows=[list(columns)]) for i, (tab, columns) in enumerate(TABS.items())]
-    sheets[3] = FakeSheet(3, "subcategories", rows=[list(TABS["subcategories"]), *rows])
+    sheets[3] = FakeSheet(3, "subcategories", rows=[list(header), *rows])
     api.add_spreadsheet("sheet-1", sheets)
 
 
-def test_existing_subcategories_tab_keeps_user_rows_and_gets_added_defaults() -> None:
+def describe(category: str, name: str) -> str:
+    return SUBCATEGORY_DESCRIPTIONS[(category, name)]
+
+
+def test_existing_subcategories_tab_gets_description_column_and_added_defaults() -> None:
     api = FakeSheetsApi()
     existing_spreadsheet_with_subcategories(api, [["Pets", "Toys", "2026-01-01T00:00:00Z", "FALSE"]])
 
     ensure_spreadsheet(api, NOW)
 
-    assert api.sheet("sheet-1", "subcategories").rows[1:] == [
-        ["Pets", "Toys", "2026-01-01T00:00:00Z", "FALSE"],
-        *[[category, name, NOW, "FALSE"] for category, name in ADDED_SUBCATEGORIES],
+    rows = api.sheet("sheet-1", "subcategories").rows
+    assert rows[0] == [*OLD_SUBCATEGORY_HEADER, "description"]
+    assert rows[1:] == [
+        ["Pets", "Toys", "2026-01-01T00:00:00Z", "FALSE"],  # the user's own row is untouched
+        *[[c, n, NOW, "FALSE", describe(c, n)] for c, n in ADDED_SUBCATEGORIES],
     ]
 
 
-def test_renamed_default_subcategory_is_renamed_once() -> None:
+def test_defaults_are_renamed_and_described_once() -> None:
     api = FakeSheetsApi()
     old = "2026-01-01T00:00:00Z"
     existing_spreadsheet_with_subcategories(
@@ -161,9 +175,10 @@ def test_renamed_default_subcategory_is_renamed_once() -> None:
     api.calls.clear()
     ensure_spreadsheet(api, NOW)
 
+    fruit = "Fresh Fruit & Vegetables"
     assert rows[:2] == [
-        ["Groceries", "Fresh Fruit & Vegetables", NOW, "FALSE"],
-        ["Groceries", "Bakery", old, "FALSE"],
+        ["Groceries", fruit, NOW, "FALSE", describe("Groceries", fruit)],
+        ["Groceries", "Bakery", NOW, "FALSE", describe("Groceries", "Bakery")],
     ]
     assert "write_values" not in api.calls and "append_values" not in api.calls  # nothing left to do
 
@@ -173,19 +188,20 @@ def test_user_choices_about_defaults_are_respected() -> None:
     existing_spreadsheet_with_subcategories(
         api,
         [
-            ["Groceries", "Produce", NOW, "TRUE"],  # soft-deleted: not renamed
-            ["groceries", "tofu & plant protein", NOW, "TRUE"],  # soft-deleted: not re-added
-            ["Groceries", "Rice, Grains & Cereal", NOW, "FALSE"],  # already added by hand
+            ["Groceries", "Produce", "", NOW, "TRUE"],  # soft-deleted: not renamed
+            ["groceries", "tofu & plant protein", "", NOW, "TRUE"],  # soft-deleted: not re-added
+            ["Groceries", "Rice, Grains & Cereal", "", NOW, "FALSE"],  # already added by hand
+            ["Groceries", "Pantry", "Oils and sauces only", NOW, "FALSE"],  # own description kept
         ],
+        header=list(TABS["subcategories"]),
     )
 
     ensure_spreadsheet(api, NOW)
 
-    assert [row[1] for row in api.sheet("sheet-1", "subcategories").rows[1:]] == [
-        "Produce",
-        "tofu & plant protein",
-        "Rice, Grains & Cereal",
-    ]
+    rows = api.sheet("sheet-1", "subcategories").rows[1:]
+    assert [row[1] for row in rows] == ["Produce", "tofu & plant protein", "Rice, Grains & Cereal", "Pantry"]
+    assert rows[3][2] == "Oils and sauces only"
+    assert rows[2][2] == describe("Groceries", "Rice, Grains & Cereal")  # blank description filled
 
 
 def test_migrate_once_runs_once_per_spreadsheet(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -205,7 +221,7 @@ def existing_spreadsheet_with_categories(api: FakeSheetsApi, category_rows: list
     sheets = [FakeSheet(i, tab, rows=[list(columns)]) for i, (tab, columns) in enumerate(TABS.items())]
     sheets[2] = FakeSheet(2, "categories", rows=[list(TABS["categories"]), *category_rows])
     # Subcategories already up to date, so only the categories migration can write.
-    added = [[category, name, NOW, "FALSE"] for category, name in ADDED_SUBCATEGORIES]
+    added = [[c, n, SUBCATEGORY_DESCRIPTIONS[(c, n)], NOW, "FALSE"] for c, n in ADDED_SUBCATEGORIES]
     sheets[3] = FakeSheet(3, "subcategories", rows=[list(TABS["subcategories"]), *added])
     api.add_spreadsheet("sheet-1", sheets)
 

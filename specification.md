@@ -115,7 +115,7 @@ Sheets API quotas are about 60 reads + 60 writes per minute per user, so:
 3. Migrate: add any missing tab, and append any missing column to the end of an existing tab's header row. Existing data, column order, and extra tabs or columns the user added are left alone. A new spreadsheet's empty starter tab ("Sheet1", or its localized name) becomes `receipts`. Header rows are frozen.
 4. When the `categories` tab is created, it is filled with the default categories (§4). An existing `categories` tab is never reseeded. Likewise, when the `subcategories` tab is created (new spreadsheets, and existing ones the first time they are migrated after the tab was added), it is filled with the default subcategories; an existing one is never reseeded.
 5. Data migration: categories the app relies on (currently **Tax & Fees**) are appended to an existing `categories` tab if no row with that name exists. A row the user soft-deleted counts as existing, so it is not re-added.
-6. Data migration for subcategories: defaults added after the tab first shipped (`ADDED_SUBCATEGORIES`: Groceries › Tofu & Plant Protein, Groceries › Rice, Grains & Cereal) are appended unless a row with that category and name exists (soft-deleted counts); defaults renamed since (`RENAMED_SUBCATEGORIES`: Groceries › Produce → Fresh Fruit & Vegetables) are renamed in place on an active row when no row with the new name exists. Saved items keep the old name.
+6. Data migration for subcategories: defaults added after the tab first shipped (`ADDED_SUBCATEGORIES`: Groceries › Tofu & Plant Protein, Groceries › Rice, Grains & Cereal) are appended unless a row with that category and name exists (soft-deleted counts); defaults renamed since (`RENAMED_SUBCATEGORIES`: Groceries › Produce → Fresh Fruit & Vegetables) are renamed in place on an active row when no row with the new name exists. Saved items keep the old name. Blank descriptions of default subcategories are filled with the default description; descriptions the user wrote are never changed.
 
 First sign-in costs 2 Drive writes and 2 Sheets writes. Later sign-ins cost 4 reads and no writes when everything is already current.
 
@@ -144,7 +144,7 @@ The migration also runs the first time each server process uses a spreadsheet (`
 | `receipts` | receipt_id, store, purchased_at, total, currency, image_link, created_at, updated_at, deleted |
 | `items` | item_id, receipt_id, name, quantity, price, category, subcategory, updated_at, deleted |
 | `categories` | name, icon, updated_at, deleted |
-| `subcategories` | category, name, updated_at, deleted |
+| `subcategories` | category, name, description, updated_at, deleted |
 | `budgets` | month, category, amount, updated_at, deleted |
 | `settings` | key, value, updated_at |
 | `ocr_labels` | receipt_id, field, model_value, corrected_value (opt-in) |
@@ -178,7 +178,7 @@ Created with a new `categories` tab. Users can edit them later.
 
 ### Subcategories
 
-Optional finer groups within a category (Groceries › Bakery). One row per subcategory in the `subcategories` tab, linked to its category by name (case-insensitive). Users add, rename, or soft-delete them in the spreadsheet; rows for a category that doesn't exist are ignored. An item's `subcategory` is blank when it has none. Defaults (written when the tab is created):
+Optional finer groups within a category (Groceries › Bakery). One row per subcategory in the `subcategories` tab, linked to its category by name (case-insensitive). Users add, rename, describe, or soft-delete them in the spreadsheet; rows for a category that doesn't exist are ignored. `description` says what a subcategory covers (e.g. Pantry: "Shelf-stable cooking basics: oils, vinegar, sauces, …"); Claude follows it when scanning, and the Account page shows it. Every default subcategory comes with a description (`SUBCATEGORY_DESCRIPTIONS` in `app/sheets/schema.py`). An item's `subcategory` is blank when it has none. Defaults (written when the tab is created):
 
 | Category | Subcategories |
 | --- | --- |
@@ -225,7 +225,7 @@ How receipt lines map to items (in the prompt):
 - **Taxes and fees added on top** of item prices are items in the **Tax & Fees** category (or Other if the user removed it). So category totals add up exactly to receipt totals.
 - **Tax already included** in prices (Japanese 内税, VAT summaries) is informational and is not an item.
 - `total` is the amount paid including tax; subtotals, tendered cash, change, and card lines are ignored.
-- The prompt lists each category with its subcategories. Claude picks a subcategory of the item's category, or null when none fits. The schema can't tie subcategories to categories, so the backend drops any subcategory that isn't in the final category's list.
+- The prompt lists each category with its subcategories, one per line with its description when it has one. Claude picks a subcategory of the item's category, or null when none fits. The schema can't tie subcategories to categories, so the backend drops any subcategory that isn't in the final category's list.
 - "$" means the default currency (CAD) unless the receipt shows US dollars. Japanese era years: 令和N年 = 2018 + N.
 
 The backend normalizes the answer (amount formats like `4,99`, `¥1,080`, `100-`; unknown categories fall back to Other) and checks:
@@ -252,7 +252,7 @@ Tests: `tests/samples/` holds OCR texts in English (Ontario, HST), French (Québ
 | GET | `/api/health` | Health check (phase 1) |
 | GET | `/api/auth/google`, `/api/auth/callback` | Google Sign-In (§3) |
 | GET | `/api/auth/me` | Signed-in user (email, name, picture, `spreadsheet_url`); 401 if not signed in |
-| GET | `/api/categories` | Active categories (`name`, `icon`, `subcategories`) from the `categories` and `subcategories` tabs |
+| GET | `/api/categories` | Active categories (`name`, `icon`, `subcategories`, `descriptions`: subcategory → description) from the `categories` and `subcategories` tabs |
 | POST | `/api/auth/logout` | Clear the session cookie |
 | POST | `/api/receipts/scan` | `{ocr_text, image?, image_media_type?}` → Claude → `{draft, issues, needs_image, used_image}`. Nothing is saved (§3, §5) |
 | PUT | `/api/receipts/{id}/image` | Body: the photo bytes (`image/jpeg`, `png`, or `webp`, ≤ 5 MB). Saves it to Drive and sets `image_link` |
@@ -304,7 +304,7 @@ Updates and deletes always re-read the tabs, so row numbers are correct even if 
   - `/receipts/new` and `/receipts/:id/edit`: the receipt form (store, date, currency, items with quantity, unit price, category and an optional subcategory picked from that category's list, total). The total follows the items' sum until the user edits it. Edit also offers Delete. The currency defaults to `DEFAULT_CURRENCY` (from `/api/auth/me`).
   - Review screen: `/receipts/new` with a scan result in router state. It is pre-filled from the draft, lists the issues, shows the photo, keeps the scanned total as read, and uploads the photo after saving.
   - Item rows show the subcategory (or the category when there is none). Choosing a category adds a subcategory filter chip when that category has subcategories (`subcategory` in the URL).
-  - The Account page lists each category with its subcategories and says they are edited in the spreadsheet.
+  - The Account page lists the categories; tapping one shows its subcategories with their descriptions. It says they are edited in the spreadsheet.
   - Transactions show a Photo link for receipts with a photo, and "Items CSV" / "Receipts CSV" buttons for the current filters.
 - Money in the frontend is handled as decimal strings and bigint math (`src/lib/decimal.ts`), never JS floats.
 

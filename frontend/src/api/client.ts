@@ -142,6 +142,8 @@ export interface Category {
   name: string
   icon: string
   subcategories: string[]
+  /** Subcategory name → what it covers (only the ones with a description). */
+  descriptions: Record<string, string>
 }
 
 export function getCategories(): Promise<Category[]> {

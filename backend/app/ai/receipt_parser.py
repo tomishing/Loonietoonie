@@ -58,8 +58,8 @@ and savings summaries that repeat discounts already listed.
 - name: the item name as printed, in its original language.
 - category: the best match from the allowed list, judged from the item name in any language.
 - subcategory: the best match among the subcategories listed for THAT category, or null if \
-the category has none or none clearly fits. Tax and fee lines use the Tax & Fees \
-subcategories (sales tax, deposits, bag fees, tips).
+the category has none or none clearly fits. Follow the subcategory descriptions when given. \
+Tax and fee lines use the Tax & Fees subcategories (sales tax, deposits, bag fees, tips).
 
 total: the amount paid, including tax (TOTAL, Grand total, TOTAL À PAYER, 合計), not the \
 subtotal, the amount tendered, or the change.
@@ -209,6 +209,17 @@ class ClaudeReceiptParser:
             raise ReceiptParseError("Claude returned an unexpected answer") from exc
 
 
+def _category_lines(category: Category) -> str:
+    """ "- Groceries:" then one indented line per subcategory, with its description if it has one."""
+    if not category.subcategories:
+        return f"- {category.name} (no subcategories)"
+    lines = [f"- {category.name}:"]
+    for name in category.subcategories:
+        description = category.descriptions.get(name)
+        lines.append(f"  - {name}: {description}" if description else f"  - {name}")
+    return "\n".join(lines)
+
+
 def _user_prompt(
     ocr_text: str, categories: list[Category], default_currency: str, today: date, image: ReceiptImage | None
 ) -> str:
@@ -218,13 +229,10 @@ def _user_prompt(
         if image is not None
         else "Here is the OCR text of the receipt."
     )
-    allowed = "\n".join(
-        f"- {c.name}: {'; '.join(c.subcategories)}" if c.subcategories else f"- {c.name} (no subcategories)"
-        for c in categories
-    )
+    allowed = "\n".join(_category_lines(category) for category in categories)
     return (
         f"Today is {today.isoformat()}. The default currency is {default_currency}.\n"
-        f"Allowed categories, each with its subcategories (separated by semicolons):\n{allowed}\n\n"
+        f"Allowed categories, each with its subcategories and what they cover:\n{allowed}\n\n"
         f"{source}\n\n<ocr_text>\n{ocr_text.strip() or '(no text recognized)'}\n</ocr_text>"
     )
 

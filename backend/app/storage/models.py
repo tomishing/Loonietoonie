@@ -25,6 +25,8 @@ class Category(BaseModel):
     icon: str
     # Finer groups within the category, from the subcategories tab, in sheet order.
     subcategories: list[str] = Field(default_factory=list)
+    # What a subcategory covers (subcategory name → description); only non-blank ones.
+    descriptions: dict[str, str] = Field(default_factory=dict)
 
 
 def _blank_to_none(value: str | None) -> str | None:

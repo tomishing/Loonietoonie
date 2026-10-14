@@ -19,6 +19,7 @@ from app.sheets.schema import (
     SPREADSHEET_MARKER,
     SPREADSHEET_MIME_TYPE,
     SPREADSHEET_NAME,
+    SUBCATEGORY_DESCRIPTIONS,
     TABS,
     TRUE,
     tab_range,
@@ -97,11 +98,12 @@ def migrate(api: SheetsApi, spreadsheet_id: str, now: str) -> None:
         rows = [[name, icon, now, FALSE] for name, icon in DEFAULT_CATEGORIES]
         values.append((tab_range("categories", "A2"), rows))
     if "subcategories" in created:
-        rows = [
-            [category, name, now, FALSE]
+        records = [
+            _subcategory_record(category, name, now)
             for category, names in DEFAULT_SUBCATEGORIES.items()
             for name in names
         ]
+        rows = [[record[column] for column in TABS["subcategories"]] for record in records]
         values.append((tab_range("subcategories", "A2"), rows))
 
     if requests:
@@ -146,60 +148,80 @@ def _add_required_categories(api: SheetsApi, spreadsheet_id: str, now: str) -> N
         api.append_values(spreadsheet_id, tab_range("categories"), rows_to_add)
 
 
-def _update_default_subcategories(api: SheetsApi, spreadsheet_id: str, now: str) -> None:
-    """Data migration: apply default subcategories added or renamed since the tab was created.
+def _subcategory_record(category: str, name: str, now: str) -> dict[str, str]:
+    return {
+        "category": category,
+        "name": name,
+        "description": SUBCATEGORY_DESCRIPTIONS.get((category, name), ""),
+        "updated_at": now,
+        "deleted": FALSE,
+    }
 
-    One read, at most two writes. Rows the user added, renamed, or soft-deleted are respected.
+
+def _update_default_subcategories(api: SheetsApi, spreadsheet_id: str, now: str) -> None:
+    """Data migration: bring the defaults in an existing subcategories tab up to date.
+
+    - renames defaults renamed since (RENAMED_SUBCATEGORIES)
+    - fills blank descriptions of default subcategories (SUBCATEGORY_DESCRIPTIONS)
+    - appends defaults added since (ADDED_SUBCATEGORIES)
+
+    One read, at most two writes. Rows the user added, renamed, described, or soft-deleted
+    are respected.
     """
     rows = api.read_values(spreadsheet_id, tab_range("subcategories"))
     headers = [header.strip() for header in rows[0]] if rows else []
     if "category" not in headers or "name" not in headers:
         return
-    category_index, name_index = headers.index("category"), headers.index("name")
-    deleted_index = headers.index("deleted") if "deleted" in headers else None
-    updated_index = headers.index("updated_at") if "updated_at" in headers else None
+    column = {header: index for index, header in enumerate(headers) if header}
 
-    def cell(row: list[str], index: int | None) -> str:
+    def cell(row: list[str], header: str) -> str:
+        index = column.get(header)
         return row[index].strip() if index is not None and index < len(row) else ""
 
-    existing = {(cell(row, category_index).casefold(), cell(row, name_index).casefold()) for row in rows[1:]}
+    def key(category: str, name: str) -> tuple[str, str]:
+        return category.casefold(), name.casefold()
 
-    renames: list[tuple[str, list[list[str]]]] = []
+    renamed = {key(category, old): new for (category, old), new in RENAMED_SUBCATEGORIES.items()}
+    descriptions = {key(category, name): text for (category, name), text in SUBCATEGORY_DESCRIPTIONS.items()}
+    existing = {key(cell(row, "category"), cell(row, "name")) for row in rows[1:]}
+
+    updates: list[tuple[str, list[list[str]]]] = []
+
+    def update(number: int, header: str, value: str) -> None:
+        if header in column:
+            updates.append((tab_range("subcategories", rowcol_to_a1(number, column[header] + 1)), [[value]]))
+
     for number, row in enumerate(rows[1:], start=2):
-        key = (cell(row, category_index), cell(row, name_index))
-        new_name = next(
-            (
-                new
-                for (cat, old), new in RENAMED_SUBCATEGORIES.items()
-                if (cat.casefold(), old.casefold()) == (key[0].casefold(), key[1].casefold())
-            ),
-            None,
-        )
-        if new_name is None or cell(row, deleted_index).upper() == TRUE:
-            continue
-        if (key[0].casefold(), new_name.casefold()) in existing:
-            continue
-        renames.append((tab_range("subcategories", rowcol_to_a1(number, name_index + 1)), [[new_name]]))
-        if updated_index is not None:
-            renames.append((tab_range("subcategories", rowcol_to_a1(number, updated_index + 1)), [[now]]))
-        existing.add((key[0].casefold(), new_name.casefold()))
+        category, name = cell(row, "category"), cell(row, "name")
+        changed = False
+        new_name = renamed.get(key(category, name))
+        if (
+            new_name is not None
+            and cell(row, "deleted").upper() != TRUE
+            and key(category, new_name) not in existing
+        ):
+            update(number, "name", new_name)
+            existing.add(key(category, new_name))
+            name, changed = new_name, True
+        description = descriptions.get(key(category, name))
+        if description is not None and not cell(row, "description"):
+            update(number, "description", description)
+            changed = True
+        if changed:
+            update(number, "updated_at", now)
 
     missing = [
-        (category, name)
+        _subcategory_record(category, name, now)
         for category, name in ADDED_SUBCATEGORIES
-        if (category.casefold(), name.casefold()) not in existing
+        if key(category, name) not in existing
     ]
-    if renames:
-        api.write_values(spreadsheet_id, renames)
+    if updates:
+        api.write_values(spreadsheet_id, updates)
     if missing:
-        records = [
-            {"category": category, "name": name, "updated_at": now, "deleted": FALSE}
-            for category, name in missing
-        ]
         api.append_values(
             spreadsheet_id,
             tab_range("subcategories"),
-            [[record.get(header, "") for header in headers] for record in records],
+            [[record.get(header, "") for header in headers] for record in missing],
         )
 
 

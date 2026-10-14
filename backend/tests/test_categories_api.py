@@ -45,7 +45,7 @@ def test_lists_categories(client: TestClient) -> None:
     response = client.get("/api/categories")
 
     assert response.status_code == 200
-    assert response.json() == [{"name": "Groceries", "icon": "🛒", "subcategories": []}]
+    assert response.json() == [{"name": "Groceries", "icon": "🛒", "subcategories": [], "descriptions": {}}]
 
 
 def test_requires_sign_in(client: TestClient) -> None:
