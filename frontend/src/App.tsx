@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Route, Routes } from 'react-router'
 import { Layout } from './components/Layout'
 import { RequireSignIn } from './components/RequireSignIn'
+import { ChatPage } from './pages/ChatPage'
 import { HomePage } from './pages/HomePage'
 import { ReceiptFormPage } from './pages/ReceiptFormPage'
 import { ScanPage } from './pages/ScanPage'
@@ -23,6 +24,14 @@ function App() {
               <Suspense fallback={<p className="muted center">Loading…</p>}>
                 <DashboardPage />
               </Suspense>
+            </RequireSignIn>
+          }
+        />
+        <Route
+          path="ask"
+          element={
+            <RequireSignIn>
+              <ChatPage />
             </RequireSignIn>
           }
         />

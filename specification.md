@@ -222,7 +222,7 @@ Tests: `tests/samples/` holds OCR texts in English (Ontario, HST), French (Québ
 | DELETE | `/api/receipts/{id}` | Soft-delete the receipt and its items; 204 |
 | GET | `/api/summary?month=YYYY-MM&currency=CAD` | Spending patterns for one month and one currency (§7 Dashboard). Defaults: this month, `DEFAULT_CURRENCY` |
 | GET / PUT | `/api/budgets` | Later (savings step, phase 10): monthly budgets per category |
-| POST | `/api/chat` | Spending chatbot |
+| POST | `/api/chat` | Spending chatbot. Body: `{messages: [{role, content}]}` (text only, last one from the user, ≤ 40 messages, ≤ 4000 chars each). Streams newline-delimited JSON events (`text`, `status`, `reset`, `error`, `done`) (§7 Chat) |
 | GET | `/api/export/csv` | CSV export |
 
 Request and response bodies are Pydantic models. Money values (`total`, `price`, `quantity`) are JSON **strings** in responses (e.g. `"3.49"`); requests accept strings or numbers. Storage problems return 502; an expired Google grant returns 401.
@@ -251,7 +251,7 @@ Updates and deletes always re-read the tabs, so row numbers are correct even if 
 
 ## 7. Frontend
 
-- Pages: Home, Scan (capture → review/edit → save), Transactions, Dashboard ("Patterns"), Settings. A Budget page comes with the savings step (phase 10).
+- Pages: Home, Scan (capture → review/edit → save), Transactions, Dashboard ("Patterns"), Ask (chatbot), Settings. A Budget page comes with the savings step (phase 10).
 - Built so far (routes via React Router):
   - `/` Home: sign-in, Scan and Enter-by-hand buttons, spreadsheet link, categories.
   - `/scan`: take or choose a photo, read it on the device with progress, send the text (and the photo once if needed), then open the review screen.
@@ -260,6 +260,26 @@ Updates and deletes always re-read the tabs, so row numbers are correct even if 
   - Review screen: `/receipts/new` with a scan result in router state. It is pre-filled from the draft, lists the issues, shows the photo, keeps the scanned total as read, and uploads the photo after saving.
   - Transactions show a 📷 link for receipts with a photo.
 - Money in the frontend is handled as decimal strings and bigint math (`src/lib/decimal.ts`), never JS floats.
+
+### Chat ("Ask", `/ask`)
+
+Purpose: answer questions about actual spending ("What did I spend most on this month?", "今月の外食はいくら？") from the user's own receipts.
+
+- **Model:** `ANTHROPIC_CHAT_MODEL` (default `claude-opus-5-5`, effort `medium`). `claude-haiku-5-5` is a much cheaper option. Refusal fallbacks are on: `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) re-runs a safety-declined request on Anthropic's recommended model; the frontend drops any partial text on a `reset` event.
+- **Numbers come from tools, not from the model's arithmetic.** Three read-only tools run pandas over the user's receipts (`app/services/spending_queries.py`), and their inputs are validated with Pydantic before running:
+  - `spending_breakdown`: total and rows for a date range, grouped by category, store, month, item, or weekday; optional category, store, and item filters
+  - `find_receipts`: matching receipts with their items (newest first, up to 30) plus the count and total of all matches
+  - `month_overview`: the dashboard numbers for one month (same code as `/api/summary`)
+- **Prompt:** a stable system prompt (cached) plus per-user facts after the cache breakpoint: today, default currency, receipt counts per currency, first/last receipt date, and category names. Rules in the prompt:
+  - one currency at a time
+  - "so far" and same-days comparisons for the month in progress
+  - answer in the user's language
+  - short answers, using `- ` bullets and `**bold**` only (the frontend renders just these)
+  - no savings lectures
+- **Loop:** streamed, at most 6 tool rounds per answer. Each tool round appends to the history unchanged (thinking blocks stay valid). The answer is checked for refusals and cut-off tool input before any tool runs, and unparseable tool JSON is retried at most twice.
+- **No server-side chat storage.** The conversation lives in the browser tab (`sessionStorage`) and is sent as plain text with each request. Earlier answers are replayed without thinking blocks, which is allowed.
+- **Privacy:** questions and the spending data the tools return are sent to Claude (Anthropic). The Ask page says so.
+- **Tests:** a fake streaming client covers the loop; `RUN_LIVE_CLAUDE=1 pytest tests/live` asks the real model questions in English and Japanese about known receipts (a few cents per run).
 
 ### Dashboard ("Patterns", `/dashboard`)
 
@@ -323,7 +343,7 @@ Real values go in `.env` files, which are git-ignored. Only `.env.example` files
 
 | File | Variables |
 | --- | --- |
-| `backend/.env` (or repo-root `.env`; `backend/.env` wins) | `APP_ENV`, `FRONTEND_ORIGINS`, `FRONTEND_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_RECEIPT_MODEL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `SESSION_SECRET` (32+ chars), `SESSION_MAX_AGE_DAYS`, `DEFAULT_CURRENCY` |
+| `backend/.env` (or repo-root `.env`; `backend/.env` wins) | `APP_ENV`, `FRONTEND_ORIGINS`, `FRONTEND_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_RECEIPT_MODEL`, `ANTHROPIC_CHAT_MODEL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `SESSION_SECRET` (32+ chars), `SESSION_MAX_AGE_DAYS`, `DEFAULT_CURRENCY` |
 | `frontend/.env` | `VITE_API_BASE_URL`, `VITE_DEV_BACKEND_URL` |
 
 `VITE_*` variables are visible in the browser bundle, so they never hold secrets.
@@ -340,7 +360,7 @@ External setup: an Anthropic API key, a Google Cloud project with the Sheets + D
 | 4 | Receipts CRUD (manual entry first) | Done |
 | 5 | Scan flow: on-device OCR (Tesseract.js on web; ML Kit moves to phase 9) + Claude parsing + review page | Done |
 | 6 | Dashboard: spending patterns (+ on-device cache if loading is slow; storage stage 2) | Done |
-| 7 | Chatbot | |
+| 7 | Chatbot ("Ask"): streamed answers from read-only spending tools | Done |
 | 8 | CSV export | |
 | 9 | Capacitor Android build (needs Android Studio locally), including ML Kit OCR behind `recognizeReceipt()` | |
 | 10 | Later: savings step (monthly budgets per category with budget vs actual, saved amount, saving/investment suggestions); bank/card linking (Plaid / Flinks) with an encrypted token store (storage stage 3) | |

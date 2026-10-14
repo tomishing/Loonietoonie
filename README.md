@@ -32,6 +32,10 @@ The backend also reads a repo-root `.env`; values in `backend/.env` take precede
 
 Scanning needs `ANTHROPIC_API_KEY` in `.env`. Receipts are read by `claude-haiku-5-5` (`ANTHROPIC_RECEIPT_MODEL`). OCR runs in the browser with Tesseract.js, which downloads English, French, and Japanese language data the first time you scan. The default currency is CAD (`DEFAULT_CURRENCY`).
 
+### Ask (spending chatbot)
+
+Uses the same `ANTHROPIC_API_KEY`. Answers come from `claude-opus-5-5` (`ANTHROPIC_CHAT_MODEL`), which looks up numbers in your receipts with read-only tools; set `ANTHROPIC_CHAT_MODEL=claude-haiku-5-5` for a much cheaper model. Chats are not stored on the server.
+
 ## Run the backend
 
 With Docker:
@@ -67,6 +71,6 @@ The first sign-in creates a **LoonieToonie** folder in your Google Drive with a 
 
 ```bash
 cd backend && .venv/bin/ruff check . && .venv/bin/mypy --strict app && .venv/bin/pytest
-cd backend && RUN_LIVE_CLAUDE=1 .venv/bin/pytest tests/live -v   # sample receipts through the real Claude API (< 1 cent)
+cd backend && RUN_LIVE_CLAUDE=1 .venv/bin/pytest tests/live -v   # sample receipts + chatbot questions through the real Claude API (a few cents)
 cd frontend && npm run lint && npm test && npm run build && npm run preview   # production build with service worker
 ```

@@ -467,10 +467,14 @@ label {
     scrollbar-width: none;
   }
 
+  .app-nav {
+    gap: 2px;
+  }
+
   .app-nav a {
     flex: none;
-    padding: 6px 10px;
-    font-size: 0.95rem;
+    padding: 6px 8px;
+    font-size: 0.9rem;
   }
 
   .form-grid {
@@ -987,4 +991,157 @@ label {
   .hero-figure {
     font-size: 2.5rem;
   }
+}
+
+/* ---------- chat ---------- */
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 80px);
+}
+
+.chat-log {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+
+.chat-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 0;
+  text-align: center;
+}
+
+.chat-welcome img {
+  border-radius: 16px;
+}
+
+.chat-welcome p {
+  max-width: 26rem;
+  margin: 0;
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.suggestion {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.suggestion:hover {
+  border-color: var(--accent);
+}
+
+.bubble {
+  max-width: min(36rem, 85%);
+  padding: 10px 14px;
+  border-radius: 18px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.bubble p {
+  margin: 0 0 6px;
+}
+
+.bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.bubble ul {
+  margin: 4px 0;
+  padding-left: 1.2em;
+}
+
+.bubble-user {
+  align-self: flex-end;
+  border-bottom-right-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  white-space: pre-wrap;
+}
+
+.assistant-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.assistant-avatar {
+  flex: none;
+  border-radius: 10px;
+}
+
+.bubble-assistant {
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 6px;
+  background: #fff;
+  color: var(--text-h);
+}
+
+.bubble-error {
+  background: #ffe0e0;
+  color: #9b1c1c;
+}
+
+.typing {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing {
+    animation: none;
+  }
+}
+
+.chat-input {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 8px;
+  padding: 10px 0 4px;
+  background: var(--bg);
+}
+
+.chat-input textarea {
+  flex: 1;
+  min-height: 44px;
+  max-height: 140px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: #fff;
+  color: var(--text-h);
+  font: inherit;
+  resize: none;
+  field-sizing: content;
+}
+
+.chat-input textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.page-title .button {
+  flex: none;
+  white-space: nowrap;
 }

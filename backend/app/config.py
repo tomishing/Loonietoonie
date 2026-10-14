@@ -25,6 +25,7 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
     anthropic_receipt_model: str = "claude-haiku-5-5"
+    anthropic_chat_model: str = "claude-opus-5-5"
 
     google_client_id: str = ""
     google_client_secret: str = ""

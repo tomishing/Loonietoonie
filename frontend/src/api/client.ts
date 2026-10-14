@@ -297,3 +297,55 @@ export function getSummary(month: string, currency?: string): Promise<Summary> {
   if (currency) params.set('currency', currency)
   return apiGet<Summary>(`/api/summary?${params}`)
 }
+
+// --- chat ---------------------------------------------------------------------
+
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export type ChatEvent =
+  | { type: 'text'; text: string }
+  | { type: 'status'; text: string }
+  | { type: 'reset'; text: string }
+  | { type: 'error'; text: string }
+  | { type: 'done'; text: string }
+
+/** Streams the assistant's answer. Events arrive as newline-delimited JSON. */
+export async function streamChat(
+  messages: ChatTurn[],
+  onEvent: (event: ChatEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/chat`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages }),
+    signal,
+  })
+  if (!response.ok || response.body === null) {
+    let detail: unknown = null
+    try {
+      detail = ((await response.json()) as { detail?: unknown }).detail ?? null
+    } catch {
+      // not JSON
+    }
+    throw new ApiError('POST', '/api/chat', response.status, detail)
+  }
+
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += value
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines) {
+      if (line.trim()) onEvent(JSON.parse(line) as ChatEvent)
+    }
+  }
+  if (buffer.trim()) onEvent(JSON.parse(buffer) as ChatEvent)
+}

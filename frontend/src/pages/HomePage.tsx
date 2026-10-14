@@ -57,6 +57,9 @@ export function HomePage() {
             <Link to="/dashboard" className="button button-secondary">
               📊 Spending patterns
             </Link>
+            <Link to="/ask" className="button button-secondary">
+              💬 Ask about spending
+            </Link>
             <Link to="/transactions" className="button button-secondary">
               See transactions
             </Link>

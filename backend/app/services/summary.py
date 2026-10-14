@@ -114,20 +114,23 @@ def _sum(series: "pd.Series[Any]") -> Decimal:
 
 
 @dataclass(frozen=True)
-class _Frames:
-    receipts: pd.DataFrame  # receipt_id, month, day, store, total
-    lines: pd.DataFrame  # receipt_id, month, day, store, category, name, key, amount
+class Frames:
+    receipts: pd.DataFrame  # receipt_id, date, month, day, store, total
+    lines: pd.DataFrame  # receipt_id, date, month, day, store, category, name, key, amount
 
 
-def _frames(receipts: list[Receipt]) -> _Frames:
+def build_frames(receipts: list[Receipt]) -> Frames:
+    """Receipts and item lines as DataFrames (amounts stay Decimal). Shared with the chat tools."""
     receipt_rows: list[dict[str, object]] = []
     line_rows: list[dict[str, object]] = []
     for receipt in receipts:
-        month = receipt.purchased_at.strftime("%Y-%m")
+        iso_date = receipt.purchased_at.isoformat()
+        month = iso_date[:7]
         day = receipt.purchased_at.day
         receipt_rows.append(
             {
                 "receipt_id": receipt.receipt_id,
+                "date": iso_date,
                 "month": month,
                 "day": day,
                 "store": receipt.store.strip(),
@@ -141,6 +144,7 @@ def _frames(receipts: list[Receipt]) -> _Frames:
             line_rows.append(
                 {
                     "receipt_id": receipt.receipt_id,
+                    "date": iso_date,
                     "month": month,
                     "day": day,
                     "store": receipt.store.strip(),
@@ -154,6 +158,7 @@ def _frames(receipts: list[Receipt]) -> _Frames:
             line_rows.append(
                 {
                     "receipt_id": receipt.receipt_id,
+                    "date": iso_date,
                     "month": month,
                     "day": day,
                     "store": receipt.store.strip(),
@@ -163,9 +168,9 @@ def _frames(receipts: list[Receipt]) -> _Frames:
                     "amount": receipt.total - itemized,
                 }
             )
-    receipt_columns = ["receipt_id", "month", "day", "store", "total"]
-    line_columns = ["receipt_id", "month", "day", "store", "category", "name", "key", "amount"]
-    return _Frames(
+    receipt_columns = ["receipt_id", "date", "month", "day", "store", "total"]
+    line_columns = ["receipt_id", "date", "month", "day", "store", "category", "name", "key", "amount"]
+    return Frames(
         receipts=pd.DataFrame(receipt_rows, columns=receipt_columns).astype({"total": object}),
         lines=pd.DataFrame(line_rows, columns=line_columns).astype({"amount": object}),
     )
@@ -189,7 +194,7 @@ def summarize(
     if default_currency not in currencies:
         currencies.insert(0, default_currency)
 
-    frames = _frames([r for r in receipts if r.currency == currency])
+    frames = build_frames([r for r in receipts if r.currency == currency])
     receipts_df, lines = frames.receipts, frames.lines
 
     year, number = (int(part) for part in month.split("-"))
