@@ -95,6 +95,18 @@ DEFAULT_SUBCATEGORIES: dict[str, tuple[str, ...]] = {
     "Tax & Fees": ("Sales Tax", "Deposits & Eco Fees", "Bag Fees", "Tips & Service"),
 }
 
+# Defaults added after the subcategories tab first shipped. Appended to existing spreadsheets on
+# migration unless a row with that category and name exists (a soft-deleted row counts).
+ADDED_SUBCATEGORIES: tuple[tuple[str, str], ...] = (
+    ("Groceries", "Tofu & Plant Protein"),
+    ("Groceries", "Rice, Grains & Cereal"),
+)
+# Defaults renamed since they first shipped: (category, old name) → new name. Applied on migration to
+# an active row with the old name when no row with the new name exists. Saved items keep the old name.
+RENAMED_SUBCATEGORIES: dict[tuple[str, str], str] = {
+    ("Groceries", "Produce"): "Fresh Fruit & Vegetables",
+}
+
 TAX_CATEGORY = "Tax & Fees"
 # Categories the app relies on. Added to existing spreadsheets on sign-in unless a row
 # with that name already exists (a row the user soft-deleted counts, so it isn't re-added).

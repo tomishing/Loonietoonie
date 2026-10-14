@@ -115,8 +115,9 @@ Sheets API quotas are about 60 reads + 60 writes per minute per user, so:
 3. Migrate: add any missing tab, and append any missing column to the end of an existing tab's header row. Existing data, column order, and extra tabs or columns the user added are left alone. A new spreadsheet's empty starter tab ("Sheet1", or its localized name) becomes `receipts`. Header rows are frozen.
 4. When the `categories` tab is created, it is filled with the default categories (§4). An existing `categories` tab is never reseeded. Likewise, when the `subcategories` tab is created (new spreadsheets, and existing ones the first time they are migrated after the tab was added), it is filled with the default subcategories; an existing one is never reseeded.
 5. Data migration: categories the app relies on (currently **Tax & Fees**) are appended to an existing `categories` tab if no row with that name exists. A row the user soft-deleted counts as existing, so it is not re-added.
+6. Data migration for subcategories: defaults added after the tab first shipped (`ADDED_SUBCATEGORIES`: Groceries › Tofu & Plant Protein, Groceries › Rice, Grains & Cereal) are appended unless a row with that category and name exists (soft-deleted counts); defaults renamed since (`RENAMED_SUBCATEGORIES`: Groceries › Produce → Fresh Fruit & Vegetables) are renamed in place on an active row when no row with the new name exists. Saved items keep the old name.
 
-First sign-in costs 2 Drive writes and 2 Sheets writes. Later sign-ins cost 3 reads and no writes when everything is already current.
+First sign-in costs 2 Drive writes and 2 Sheets writes. Later sign-ins cost 4 reads and no writes when everything is already current.
 
 The migration also runs the first time each server process uses a spreadsheet (`migrate_once`, on the first API request), because sessions last for weeks: a schema change reaches existing users without asking them to sign in again.
 
