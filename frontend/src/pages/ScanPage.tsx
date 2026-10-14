@@ -3,8 +3,8 @@ import { Link, useNavigate } from 'react-router'
 import { errorMessages, scanReceipt, type ScanResult } from '../api/client'
 import { hasDocumentScanner, scanDocument, ScannerUnavailableError } from '../capture/documentScanner'
 import { Icon } from '../components/Icon'
-import { prepareImage, toBase64, type PreparedImage } from '../lib/image'
-import { recognizeReceipt } from '../ocr'
+import { prepareImage, stitchImages, toBase64, type PreparedImage } from '../lib/image'
+import { recognizeReceiptParts } from '../ocr'
 
 /** Passed to the review screen (ReceiptFormPage) through router state. */
 export interface ScanReviewState {
@@ -20,10 +20,23 @@ type Step =
 // Rough share of the progress bar for each stage (OCR reports its own progress inside the first part).
 const READING_SHARE = 0.5
 
+/** The prepared photo(s): one per part of a long receipt, plus the image shown and saved. */
+interface Photos {
+  pages: PreparedImage[]
+  /** The single page, or all pages stitched top to bottom. */
+  combined: PreparedImage
+}
+
+function revokePhotos(photos: Photos) {
+  for (const url of new Set([...photos.pages.map((page) => page.previewUrl), photos.combined.previewUrl])) {
+    URL.revokeObjectURL(url)
+  }
+}
+
 export function ScanPage() {
   const navigate = useNavigate()
-  const [image, setImage] = useState<PreparedImage | null>(null)
-  // The camera's original file, shown on the scanning screen while the photo is being prepared.
+  const [photos, setPhotos] = useState<Photos | null>(null)
+  // The camera's original file (the first part), shown on the scanning screen while photos are prepared.
   const [rawPreview, setRawPreview] = useState<string | null>(null)
   const [step, setStep] = useState<Step>({ name: 'pick' })
   // Two inputs: the camera (capture) and the photo gallery. On a computer both open a file picker.
@@ -33,30 +46,41 @@ export function ScanPage() {
   const runRef = useRef(0)
   const scannerUnavailable = useRef(false)
 
-  useEffect(() => () => (image ? URL.revokeObjectURL(image.previewUrl) : undefined), [image])
+  useEffect(() => () => (photos ? revokePhotos(photos) : undefined), [photos])
   useEffect(() => () => (rawPreview ? URL.revokeObjectURL(rawPreview) : undefined), [rawPreview])
   useEffect(() => () => void (runRef.current += 1), [])
 
-  const scan = async (photo: PreparedImage, run = ++runRef.current) => {
+  const scan = async ({ pages, combined }: Photos, run = ++runRef.current) => {
     const current = () => run === runRef.current
+    const reading = (part: number) => (pages.length > 1 ? `Reading the text (part ${part} of ${pages.length})` : 'Reading the text')
     try {
-      setStep({ name: 'scanning', stage: 'Reading the text', progress: 0.05 })
-      const { text } = await recognizeReceipt(photo.blob, ({ progress }) => {
-        if (current()) setStep({ name: 'scanning', stage: 'Reading the text', progress: progress * READING_SHARE })
-      })
+      setStep({ name: 'scanning', stage: reading(1), progress: 0.05 })
+      const { text } = await recognizeReceiptParts(
+        pages.map((page) => page.blob),
+        ({ progress, part }) => {
+          if (current()) setStep({ name: 'scanning', stage: reading(part), progress: progress * READING_SHARE })
+        },
+      )
       if (!current()) return
 
       setStep({ name: 'scanning', stage: 'Finding the items and prices', progress: null })
       let result = await scanReceipt(text)
       if (!current()) return
       if (result.needs_image) {
-        // The text alone didn't add up: let Claude look at the photo once.
-        setStep({ name: 'scanning', stage: 'Taking a closer look at the photo', progress: null })
-        result = await scanReceipt(text, { base64: await toBase64(photo.blob), mediaType: photo.mediaType })
+        // The text alone didn't add up: let Claude look at the photo(s) once.
+        setStep({
+          name: 'scanning',
+          stage: pages.length > 1 ? 'Taking a closer look at the photos' : 'Taking a closer look at the photo',
+          progress: null,
+        })
+        const images = await Promise.all(
+          pages.map(async (page) => ({ base64: await toBase64(page.blob), mediaType: page.mediaType })),
+        )
+        result = await scanReceipt(text, images)
         if (!current()) return
       }
 
-      const state: ScanReviewState = { scan: result, image: photo.blob }
+      const state: ScanReviewState = { scan: result, image: combined.blob }
       navigate('/receipts/new', { state })
     } catch (error) {
       if (current()) setStep({ name: 'error', messages: errorMessages(error) })
@@ -67,18 +91,22 @@ export function ScanPage() {
   const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
-    if (file) void handlePhoto(file)
+    if (file) void handlePhotos([file])
   }
 
-  const handlePhoto = async (file: Blob) => {
+  /** files: one photo, or the parts of a long receipt from the document scanner (top to bottom). */
+  const handlePhotos = async (files: Blob[]) => {
     const run = ++runRef.current
-    setRawPreview(URL.createObjectURL(file))
-    setStep({ name: 'scanning', stage: 'Preparing the photo', progress: 0 })
+    setRawPreview(URL.createObjectURL(files[0]))
+    setStep({ name: 'scanning', stage: files.length > 1 ? 'Preparing the photos' : 'Preparing the photo', progress: 0 })
     try {
-      const photo = await prepareImage(file)
+      const pages: PreparedImage[] = []
+      for (const file of files) pages.push(await prepareImage(file)) // one at a time: less memory
+      const combined = pages.length > 1 ? await stitchImages(pages) : pages[0]
       if (run !== runRef.current) return
-      setImage(photo)
-      void scan(photo, run)
+      const prepared = { pages, combined }
+      setPhotos(prepared)
+      void scan(prepared, run)
     } catch {
       if (run === runRef.current) {
         setStep({ name: 'error', messages: ["Couldn't open that photo. Try a JPEG or PNG image."] })
@@ -86,16 +114,16 @@ export function ScanPage() {
     }
   }
 
-  // Android app: Google's document scanner (crops and straightens the receipt). Web, or a phone
-  // without the scanner: the camera through a file input.
+  // Android app: Google's document scanner (crops and straightens the receipt; a long receipt can be
+  // several pages). Web, or a phone without the scanner: the camera through a file input.
   const takePhoto = async () => {
     if (!hasDocumentScanner || scannerUnavailable.current) {
       cameraRef.current?.click()
       return
     }
     try {
-      const photo = await scanDocument()
-      if (photo) void handlePhoto(photo)
+      const scanned = await scanDocument()
+      if (scanned) void handlePhotos(scanned)
     } catch (error) {
       if (error instanceof ScannerUnavailableError) {
         scannerUnavailable.current = true
@@ -133,7 +161,7 @@ export function ScanPage() {
     </>
   )
 
-  const scanningPreview = rawPreview ?? image?.previewUrl
+  const scanningPreview = rawPreview ?? photos?.combined.previewUrl
   if (step.name === 'scanning' && scanningPreview) {
     return (
       <section className="page scanning" aria-busy="true">
@@ -170,8 +198,8 @@ export function ScanPage() {
       </div>
 
       <div className="scan">
-        {image ? (
-          <img className="scan-preview" src={image.previewUrl} alt="Receipt photo" />
+        {photos ? (
+          <img className="scan-preview" src={photos.combined.previewUrl} alt="Receipt photo" />
         ) : (
           <button type="button" className="scan-placeholder" onClick={() => void takePhoto()}>
             <span className="scan-placeholder-icon">
@@ -191,18 +219,18 @@ export function ScanPage() {
           ))}
 
         <div className="scan-actions">
-          {image && step.name === 'error' && (
-            <button type="button" className="button button-primary button-block" onClick={() => void scan(image)}>
+          {photos && step.name === 'error' && (
+            <button type="button" className="button button-primary button-block" onClick={() => void scan(photos)}>
               Try again
             </button>
           )}
           <button
             type="button"
-            className={`button button-block ${image ? 'button-secondary' : 'button-primary'}`}
+            className={`button button-block ${photos ? 'button-secondary' : 'button-primary'}`}
             onClick={() => void takePhoto()}
           >
             <Icon name="camera" size={20} />
-            {image ? 'Retake' : 'Take photo'}
+            {photos ? 'Retake' : 'Take photo'}
           </button>
           <button
             type="button"

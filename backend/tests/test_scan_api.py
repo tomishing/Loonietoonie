@@ -109,7 +109,19 @@ def test_scan_retry_decodes_photo(client: TestClient, parser: FakeParser) -> Non
     )
 
     assert response.json()["used_image"] is True
-    assert parser.images == [ReceiptImage(data=b"\xff\xd8photo", media_type="image/jpeg")]
+    assert parser.images == [[ReceiptImage(data=b"\xff\xd8photo", media_type="image/jpeg")]]
+
+
+def test_scan_retry_with_several_photos_keeps_their_order(client: TestClient, parser: FakeParser) -> None:
+    parts = [
+        {"data": base64.b64encode(b"top").decode(), "media_type": "image/jpeg"},
+        {"data": base64.b64encode(b"end").decode(), "media_type": "image/jpeg"},
+    ]
+
+    response = client.post("/api/receipts/scan", json={"ocr_text": "x", "images": parts})
+
+    assert response.json()["used_image"] is True
+    assert [image.data for image in parser.images[0]] == [b"top", b"end"]
 
 
 @pytest.mark.parametrize(
@@ -118,7 +130,14 @@ def test_scan_retry_decodes_photo(client: TestClient, parser: FakeParser) -> Non
         {"ocr_text": "x", "image": "aGVsbG8="},
         {"ocr_text": "x", "image": "not base64!", "image_media_type": "image/jpeg"},
         {"ocr_text": "x", "image": "aGVsbG8=", "image_media_type": "image/gif"},
-        {"ocr_text": "x" * 20_001},
+        {"ocr_text": "x" * 60_001},
+        {"ocr_text": "x", "images": [{"data": "aGVsbG8=", "media_type": "image/jpeg"}] * 6},
+        {
+            "ocr_text": "x",
+            "image": "aGVsbG8=",
+            "image_media_type": "image/jpeg",
+            "images": [{"data": "aGVsbG8=", "media_type": "image/jpeg"}],
+        },
     ],
 )
 def test_scan_rejects_bad_input(client: TestClient, body: dict[str, Any]) -> None:

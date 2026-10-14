@@ -122,12 +122,12 @@ def test_retry_with_photo_never_asks_again() -> None:
     parsed = receipt("10.03", [item("A", "5.00"), item("B", "5.00")])
     parser = FakeParser(parsed)
 
-    result = scan_receipt(parser, FakeRepository(), "t", IMAGE, "CAD", TODAY)
+    result = scan_receipt(parser, FakeRepository(), "t", [IMAGE], "CAD", TODAY)
 
     assert result.needs_image is False
     assert result.used_image is True
     assert [i.code for i in result.issues] == ["total_mismatch"]
-    assert parser.calls[0][1] is IMAGE
+    assert parser.calls[0][1] == [IMAGE]
 
 
 def test_quantity_times_unit_price_is_used() -> None:
@@ -156,7 +156,7 @@ def test_empty_ocr_text_skips_claude_and_asks_for_photo() -> None:
 def test_empty_ocr_text_with_photo_calls_claude() -> None:
     parser = FakeParser(ONTARIO)
 
-    result = scan_receipt(parser, FakeRepository(), "", IMAGE, "CAD", TODAY)
+    result = scan_receipt(parser, FakeRepository(), "", [IMAGE], "CAD", TODAY)
 
     assert result.issues == []
     assert len(parser.calls) == 1

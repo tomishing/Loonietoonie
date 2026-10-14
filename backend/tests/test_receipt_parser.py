@@ -72,7 +72,11 @@ def make_parser(messages: FakeMessages) -> ClaudeReceiptParser:
 
 def parse(parser: ClaudeReceiptParser, image: ReceiptImage | None = None) -> Any:
     return parser.parse(
-        "FRESHCO\nMILK 5.00\nHST 0.65\nTOTAL 5.65", CATEGORY_LIST, "CAD", date(2026, 10, 13), image
+        "FRESHCO\nMILK 5.00\nHST 0.65\nTOTAL 5.65",
+        CATEGORY_LIST,
+        "CAD",
+        date(2026, 10, 13),
+        [image] if image else [],
     )
 
 
@@ -155,3 +159,20 @@ def _api_error(status: int) -> anthropic.APIStatusError:
 def test_api_errors_raise_parse_error(error: Exception) -> None:
     with pytest.raises(ReceiptParseError):
         parse(make_parser(FakeMessages(error=error)))
+
+
+def test_long_receipt_photos_are_attached_in_order() -> None:
+    messages = FakeMessages(message(json.dumps(ANSWER)))
+    parts = [
+        ReceiptImage(data=b"top", media_type="image/jpeg"),
+        ReceiptImage(data=b"end", media_type="image/png"),
+    ]
+
+    make_parser(messages).parse(
+        "--- part 1 of 2 ---\nA\n--- part 2 of 2 ---\nB", CATEGORY_LIST, "CAD", date(2026, 10, 13), parts
+    )
+
+    first, second, text = messages.requests[0]["messages"][0]["content"]
+    assert (first["source"]["data"], second["source"]["media_type"]) == ("dG9w", "image/png")
+    assert "2 photos of one long receipt are attached in order" in text["text"]
+    assert "part 2 of 3" in SYSTEM_PROMPT  # the overlap rule

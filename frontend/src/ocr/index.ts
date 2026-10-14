@@ -26,3 +26,28 @@ export async function recognizeReceipt(
   const { recognizeWithTesseract } = await import('./tesseract')
   return recognizeWithTesseract(image, onProgress)
 }
+
+/**
+ * Text of a long receipt photographed in parts (top to bottom), separated by
+ * "--- part N of M ---" lines. The backend's prompt explains the markers and that
+ * consecutive parts may overlap. A single part is returned as it is.
+ */
+export function joinParts(texts: string[]): string {
+  if (texts.length === 1) return texts[0]
+  return texts.map((text, index) => `--- part ${index + 1} of ${texts.length} ---\n${text.trim()}`).join('\n')
+}
+
+/** recognizeReceipt() for each part of a receipt, in order; progress covers all parts. */
+export async function recognizeReceiptParts(
+  images: Blob[],
+  onProgress?: (progress: OcrProgress & { part: number }) => void,
+): Promise<OcrResult> {
+  const texts: string[] = []
+  for (const [index, image] of images.entries()) {
+    const { text } = await recognizeReceipt(image, ({ progress, stage }) =>
+      onProgress?.({ progress: (index + progress) / images.length, stage, part: index + 1 }),
+    )
+    texts.push(text)
+  }
+  return { text: joinParts(texts) }
+}

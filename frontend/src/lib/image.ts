@@ -41,6 +41,48 @@ export async function prepareImage(file: Blob): Promise<PreparedImage> {
   return { blob, mediaType: 'image/jpeg', previewUrl: URL.createObjectURL(blob) }
 }
 
+// Parts of a long receipt are stitched top to bottom into one image for the review screen and Drive.
+const STITCH_MAX_WIDTH = 1400
+const STITCH_MAX_HEIGHT = 14000 // stays within Android WebView canvas limits and under the 5 MB upload
+const STITCH_JPEG_QUALITY = 0.8
+
+/** Size of the stitched image and the height of each part in it (all parts scaled to one width). */
+export function stitchLayout(sizes: { width: number; height: number }[]): {
+  width: number
+  heights: number[]
+} {
+  let width = Math.min(STITCH_MAX_WIDTH, Math.max(...sizes.map((size) => size.width)))
+  let heights = sizes.map((size) => (size.height * width) / size.width)
+  const total = heights.reduce((sum, height) => sum + height, 0)
+  if (total > STITCH_MAX_HEIGHT) {
+    const scale = STITCH_MAX_HEIGHT / total
+    width *= scale
+    heights = heights.map((height) => height * scale)
+  }
+  return { width: Math.round(width), heights: heights.map((height) => Math.round(height)) }
+}
+
+/** Stitches prepared receipt parts (in order, top to bottom) into one JPEG. */
+export async function stitchImages(parts: PreparedImage[]): Promise<PreparedImage> {
+  const bitmaps = await Promise.all(parts.map((part) => createImageBitmap(part.blob)))
+  const { width, heights } = stitchLayout(bitmaps)
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = heights.reduce((sum, height) => sum + height, 0)
+  const context = canvas.getContext('2d')
+  if (context === null) throw new Error('Canvas is not available')
+  context.fillStyle = '#fff'
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  let top = 0
+  bitmaps.forEach((bitmap, index) => {
+    context.drawImage(bitmap, 0, top, width, heights[index])
+    top += heights[index]
+    bitmap.close()
+  })
+  const blob = dataUrlToBlob(canvas.toDataURL('image/jpeg', STITCH_JPEG_QUALITY))
+  return { blob, mediaType: 'image/jpeg', previewUrl: URL.createObjectURL(blob) }
+}
+
 /** Base64 (no data: prefix) for JSON requests. */
 export async function toBase64(blob: Blob): Promise<string> {
   const dataUrl = await new Promise<string>((resolve, reject) => {

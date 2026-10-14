@@ -9,6 +9,7 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.IntentSenderRequest;
 import androidx.activity.result.contract.ActivityResultContracts;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -28,11 +29,15 @@ import java.util.List;
  * Takes a receipt photo with Google's ML Kit Document Scanner: it finds the receipt's edges,
  * crops and straightens it, and cleans it up, so OCR gets a flat image without background.
  *
- * The scanner screen runs in Google Play services (no camera permission needed) and the
+ * Long receipts can be captured as several pages (overlapping parts, top to bottom); they are
+ * returned in order. The scanner screen runs in Google Play services (no camera permission needed) and the
  * picture stays on the phone. Used by frontend/src/capture/documentScanner.ts.
  */
 @CapacitorPlugin(name = "DocumentScanner")
 public class DocumentScannerPlugin extends Plugin {
+    // Matches the backend's limit on photos per scan (app/api/scan.py MAX_IMAGES).
+    private static final int MAX_PAGES = 5;
+
     private ActivityResultLauncher<IntentSenderRequest> launcher;
     private PluginCall pending;
 
@@ -52,7 +57,7 @@ public class DocumentScannerPlugin extends Plugin {
         GmsDocumentScannerOptions options = new GmsDocumentScannerOptions.Builder()
             .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
             .setGalleryImportAllowed(false) // the app has its own "Choose from gallery"
-            .setPageLimit(1)
+            .setPageLimit(MAX_PAGES)
             .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
             .build();
         GmsDocumentScanner scanner = GmsDocumentScanning.getClient(options);
@@ -87,7 +92,11 @@ public class DocumentScannerPlugin extends Plugin {
         try {
             JSObject scanned = new JSObject();
             scanned.put("cancelled", false);
-            scanned.put("image", Base64.encodeToString(read(pages.get(0).getImageUri()), Base64.NO_WRAP));
+            JSArray images = new JSArray();
+            for (GmsDocumentScanningResult.Page page : pages) {
+                images.put(Base64.encodeToString(read(page.getImageUri()), Base64.NO_WRAP));
+            }
+            scanned.put("images", images);
             call.resolve(scanned);
         } catch (IOException error) {
             call.reject("Couldn't read the scanned page: " + error.getMessage(), "READ_FAILED");

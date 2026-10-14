@@ -6,6 +6,7 @@ once with the photo (`needs_image`), so the photo only leaves the device when ne
 """
 
 import re
+from collections.abc import Sequence
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -198,20 +199,20 @@ def scan_receipt(
     parser: ReceiptParser,
     repository: Repository,
     ocr_text: str,
-    image: ReceiptImage | None,
+    images: Sequence[ReceiptImage],
     default_currency: str,
     today: date,
 ) -> ScanResult:
-    if not ocr_text.strip() and image is None:
+    if not ocr_text.strip() and not images:
         empty = ScanDraft(store="", purchased_at=None, currency=default_currency, total=None, items=[])
         issue = ScanIssue(code="no_text", message="No text was recognized in the photo.")
         return ScanResult(draft=empty, issues=[issue], needs_image=True, used_image=False)
 
     categories = repository.list_categories() or [Category(name="Other", icon="")]
-    parsed = parser.parse(ocr_text, categories, default_currency, today, image)
+    parsed = parser.parse(ocr_text, categories, default_currency, today, images)
     draft, issues = normalize(parsed, categories, default_currency)
     issues += validate(draft, today)
     blocking = any(issue.code in BLOCKING_ISSUES for issue in issues)
     return ScanResult(
-        draft=draft, issues=issues, needs_image=blocking and image is None, used_image=image is not None
+        draft=draft, issues=issues, needs_image=blocking and not images, used_image=bool(images)
     )

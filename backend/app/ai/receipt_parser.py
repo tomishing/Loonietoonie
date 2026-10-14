@@ -6,6 +6,7 @@ parses. Whether the numbers add up is checked afterwards in app/services/scan.py
 
 import base64
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal, Protocol
@@ -61,6 +62,11 @@ and savings summaries that repeat discounts already listed.
 the category has none or none clearly fits. Follow the subcategory descriptions when given. \
 Tax and fee lines use the Tax & Fees subcategories (sales tax, deposits, bag fees, tips).
 
+Long receipts may be photographed in several parts. Their OCR text is then separated by \
+lines like "--- part 2 of 3 ---", in order from the top. Consecutive parts usually overlap: \
+a line that appears at the end of one part and again at the start of the next is ONE line, \
+so list it once.
+
 total: the amount paid, including tax (TOTAL, Grand total, TOTAL À PAYER, 合計), not the \
 subtotal, the amount tendered, or the change.
 
@@ -106,7 +112,7 @@ class ReceiptParser(Protocol):
         categories: list[Category],
         default_currency: str,
         today: date,
-        image: ReceiptImage | None = None,
+        images: Sequence[ReceiptImage] = (),
     ) -> ParsedReceipt: ...
 
 
@@ -158,10 +164,10 @@ class ClaudeReceiptParser:
         categories: list[Category],
         default_currency: str,
         today: date,
-        image: ReceiptImage | None = None,
+        images: Sequence[ReceiptImage] = (),
     ) -> ParsedReceipt:
         content: list[ContentBlockParam] = []
-        if image is not None:
+        for image in images:  # in order: part 1 is the top of the receipt
             image_block: ImageBlockParam = {
                 "type": "image",
                 "source": {
@@ -172,7 +178,7 @@ class ClaudeReceiptParser:
             }
             content.append(image_block)
         content.append(
-            {"type": "text", "text": _user_prompt(ocr_text, categories, default_currency, today, image)}
+            {"type": "text", "text": _user_prompt(ocr_text, categories, default_currency, today, len(images))}
         )
 
         output_config: OutputConfigParam = {
@@ -221,14 +227,20 @@ def _category_lines(category: Category) -> str:
 
 
 def _user_prompt(
-    ocr_text: str, categories: list[Category], default_currency: str, today: date, image: ReceiptImage | None
+    ocr_text: str, categories: list[Category], default_currency: str, today: date, image_count: int
 ) -> str:
-    source = (
-        "A photo of the receipt is attached; the OCR text below may be incomplete or wrong, "
-        "so trust the photo where they disagree."
-        if image is not None
-        else "Here is the OCR text of the receipt."
-    )
+    if image_count == 1:
+        source = (
+            "A photo of the receipt is attached; the OCR text below may be incomplete or wrong, "
+            "so trust the photo where they disagree."
+        )
+    elif image_count > 1:
+        source = (
+            f"{image_count} photos of one long receipt are attached in order, top to bottom; the OCR "
+            "text below may be incomplete or wrong, so trust the photos where they disagree."
+        )
+    else:
+        source = "Here is the OCR text of the receipt."
     allowed = "\n".join(_category_lines(category) for category in categories)
     return (
         f"Today is {today.isoformat()}. The default currency is {default_currency}.\n"

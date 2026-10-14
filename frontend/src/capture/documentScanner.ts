@@ -3,7 +3,7 @@ import { isNativeApp } from '../platform'
 import { dataUrlToBlob } from '../lib/image'
 
 interface DocumentScannerPlugin {
-  scan(): Promise<{ cancelled: boolean; image?: string }>
+  scan(): Promise<{ cancelled: boolean; images?: string[] }>
 }
 
 // Implemented in android/app/src/main/java/com/loonietoonie/app/DocumentScannerPlugin.java
@@ -16,9 +16,12 @@ export class ScannerUnavailableError extends Error {}
 /** Whether "Take photo" uses the document scanner (the Android app) or the camera file input (web). */
 export const hasDocumentScanner = isNativeApp
 
-/** Opens the scanner. Resolves with the cropped receipt as a JPEG, or null if the user backed out. */
-export async function scanDocument(): Promise<Blob | null> {
-  let result: { cancelled: boolean; image?: string }
+/**
+ * Opens the scanner. Resolves with the cropped receipt pages as JPEGs, top to bottom (a long
+ * receipt can be several overlapping parts), or null if the user backed out.
+ */
+export async function scanDocument(): Promise<Blob[] | null> {
+  let result: { cancelled: boolean; images?: string[] }
   try {
     result = await DocumentScanner.scan()
   } catch (error) {
@@ -26,6 +29,6 @@ export async function scanDocument(): Promise<Blob | null> {
     if (code === 'UNAVAILABLE' || code === 'UNIMPLEMENTED') throw new ScannerUnavailableError(String(error))
     throw error
   }
-  if (result.cancelled || !result.image) return null
-  return dataUrlToBlob(`data:image/jpeg;base64,${result.image}`)
+  if (result.cancelled || !result.images?.length) return null
+  return result.images.map((image) => dataUrlToBlob(`data:image/jpeg;base64,${image}`))
 }

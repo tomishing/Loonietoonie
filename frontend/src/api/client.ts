@@ -255,13 +255,11 @@ export interface ScanResult {
   used_image: boolean
 }
 
-export function scanReceipt(
-  ocrText: string,
-  image?: { base64: string; mediaType: string },
-): Promise<ScanResult> {
+/** Reads OCR text into a draft. `images` (the photo, or the parts of a long receipt in order) only on the retry. */
+export function scanReceipt(ocrText: string, images?: { base64: string; mediaType: string }[]): Promise<ScanResult> {
   return apiPost<ScanResult>('/api/receipts/scan', {
     ocr_text: ocrText,
-    ...(image ? { image: image.base64, image_media_type: image.mediaType } : {}),
+    ...(images?.length ? { images: images.map((image) => ({ data: image.base64, media_type: image.mediaType })) } : {}),
   })
 }
 
