@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { errorMessages, streamChat, type ChatTurn } from '../api/client'
+import { Icon } from '../components/Icon'
 import { ChatText } from '../components/ChatText'
 
 const STORAGE_KEY = 'loonietoonie.chat'
@@ -165,8 +166,13 @@ export function ChatPage() {
           rows={1}
           maxLength={4000}
         />
-        <button type="submit" className="button button-primary" disabled={streaming || !input.trim()}>
-          {streaming ? '…' : 'Ask'}
+        <button
+          type="submit"
+          className="send-button"
+          disabled={streaming || !input.trim()}
+          aria-label={streaming ? 'Answering…' : 'Ask'}
+        >
+          <Icon name="send" size={20} />
         </button>
       </form>
       <p className="muted field-note">

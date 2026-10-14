@@ -1,15 +1,40 @@
 :root {
-  --text: #4a3f4f;
-  --text-h: #2a1f2e;
-  --bg: #fff8fb;
-  --border: #f1e3ea;
-  --accent: #ff7aa2;
+  --text: #5b5160;
+  --text-h: #1f1724;
+  --text-muted: #85798a;
+  --bg: #f7f4f6;
+  --surface: #fff;
+  --surface-2: #f3edf1;
+  --border: #ece4e9;
+  /* Buttons and links (white text on it passes WCAG AA); --brand is the mascot pink for decoration. */
+  --accent: #d63a6f;
+  --accent-hover: #bf2f5f;
+  --accent-soft: #ffe8f0;
+  --brand: #ff7aa2;
+  --focus-ring: 0 0 0 3px rgba(214, 58, 111, 0.22);
+  --shadow-sm: 0 1px 2px rgba(31, 23, 36, 0.05);
+  --shadow: 0 1px 2px rgba(31, 23, 36, 0.04), 0 8px 24px rgba(31, 23, 36, 0.06);
+  --radius: 20px;
 
-  font: 16px/1.5 system-ui, 'Segoe UI', Roboto, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  /* Capacitor sets --safe-area-inset-* on Android; browsers use env(). */
+  --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --header-h: 60px;
+  --tabbar-h: 68px;
+
+  font:
+    16px/1.5 'Plus Jakarta Sans Variable',
+    system-ui,
+    'Segoe UI',
+    Roboto,
+    'Hiragino Sans',
+    'Noto Sans JP',
+    sans-serif;
   color-scheme: light;
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
 
 * {
@@ -19,6 +44,7 @@
 body {
   margin: 0;
   min-height: 100vh;
+  background: var(--bg);
 }
 
 h1 {

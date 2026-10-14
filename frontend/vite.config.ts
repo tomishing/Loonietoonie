@@ -19,8 +19,8 @@ export default defineConfig(({ mode }) => {
           name: 'LoonieToonie',
           short_name: 'LoonieToonie',
           description: 'Scan your receipts and see where your money goes.',
-          theme_color: '#ffb5c8',
-          background_color: '#fff8fb',
+          theme_color: '#f7f4f6',
+          background_color: '#f7f4f6',
           display: 'standalone',
           start_url: '/',
           icons: [

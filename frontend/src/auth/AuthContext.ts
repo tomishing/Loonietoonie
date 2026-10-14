@@ -10,6 +10,8 @@ export interface AuthState {
   signInError: string | null
   signIn: () => void
   signOut: () => Promise<void>
+  /** Checks the session again (after "Can't reach the server"). */
+  retry: () => void
 }
 
 export const AuthContext = createContext<AuthState | null>(null)

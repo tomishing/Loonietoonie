@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router'
 import { errorMessages, exportCsvUrl, listReceipts, shareCsvExport, type Receipt } from '../api/client'
+import { Icon } from '../components/Icon'
 import { isNativeApp } from '../platform'
 import { categoryIcon, useCategories, type CategoriesState } from '../hooks/useCategories'
 import { formatDecimal, lineTotal, parseDecimal } from '../lib/decimal'
+import { openPicker } from '../lib/picker'
 import { formatDate, formatMoney, formatMonth, monthRange, todayIso } from '../lib/format'
 
 type Result = { status: 'loaded'; receipts: Receipt[] } | { status: 'error'; messages: string[] }
@@ -81,12 +83,15 @@ export function TransactionsPage() {
     setSearchParams(next, { replace: true })
   }
 
+  const thisMonth = todayIso().slice(0, 7)
+
   return (
     <section className="page">
       <div className="page-title">
         <h1>Transactions</h1>
-        <Link to="/scan" className="button button-primary">
-          📷 Scan
+        <Link to="/receipts/new" className="button button-secondary button-small">
+          <Icon name="plus" size={18} />
+          Add
         </Link>
       </div>
 
@@ -96,29 +101,38 @@ export function TransactionsPage() {
         </p>
       )}
 
-      <div className="filters">
-        <label>
-          Month
-          <input type="month" value={month} onChange={(event) => setFilter('month', event.target.value)} />
+      <div className="chip-row" role="group" aria-label="Filters">
+        <button
+          type="button"
+          className={`chip chip-toggle${month ? '' : ' chip-on'}`}
+          aria-pressed={!month}
+          onClick={() => setFilter('month', '')}
+        >
+          All
+        </button>
+        <button
+          type="button"
+          className={`chip chip-toggle${month === thisMonth ? ' chip-on' : ''}`}
+          aria-pressed={month === thisMonth}
+          onClick={() => setFilter('month', thisMonth)}
+        >
+          This month
+        </button>
+        <label className={`chip chip-toggle chip-picker${month && month !== thisMonth ? ' chip-on' : ''}`}>
+          {month && month !== thisMonth ? formatMonth(month) : 'Pick a month'}
+          <Icon name="down" size={16} />
+          <input
+            type="month"
+            className="month-switch-input"
+            aria-label="Month"
+            value={month}
+            max={thisMonth}
+            onClick={openPicker}
+            onChange={(event) => setFilter('month', event.target.value)}
+          />
         </label>
-        <div className="filter-buttons">
-          <button
-            type="button"
-            className={`button button-small ${month ? 'button-secondary' : 'button-primary'}`}
-            onClick={() => setFilter('month', '')}
-          >
-            All
-          </button>
-          <button
-            type="button"
-            className={`button button-small ${month === todayIso().slice(0, 7) ? 'button-primary' : 'button-secondary'}`}
-            onClick={() => setFilter('month', todayIso().slice(0, 7))}
-          >
-            This month
-          </button>
-        </div>
-        <label>
-          Category
+        <label className={`chip-select${category ? ' chip-on' : ''}`}>
+          <span className="sr-only">Category</span>
           <select value={category} onChange={(event) => setFilter('category', event.target.value)}>
             <option value="">All categories</option>
             {categories.status === 'loaded' &&
@@ -131,7 +145,13 @@ export function TransactionsPage() {
         </label>
       </div>
 
-      {state.status === 'loading' && <p className="muted">Loading receipts…</p>}
+      {state.status === 'loading' && (
+        <div aria-hidden="true">
+          <div className="skeleton skeleton-row" />
+          <div className="skeleton skeleton-row" />
+          <div className="skeleton skeleton-row" />
+        </div>
+      )}
 
       {state.status === 'error' &&
         state.messages.map((message) => (
@@ -141,10 +161,12 @@ export function TransactionsPage() {
         ))}
 
       {state.status === 'loaded' && state.receipts.length === 0 && (
-        <div className="empty">
+        <div className="card empty">
+          <img src="/favicon.svg" alt="" width={64} height={64} />
           <p>{month || category ? 'No receipts match these filters.' : 'No receipts yet.'}</p>
           <Link to="/scan" className="button button-primary">
-            📷 Scan a receipt
+            <Icon name="camera" size={20} />
+            Scan a receipt
           </Link>
         </div>
       )}
@@ -153,16 +175,30 @@ export function TransactionsPage() {
         <>
           <div className="summary-row">
             <p className="summary">
-              {state.receipts.length} receipt{state.receipts.length === 1 ? '' : 's'} · {totalsByCurrency(state.receipts)}
+              <span className="summary-total">{totalsByCurrency(state.receipts)}</span>
+              <span className="muted">
+                {state.receipts.length} receipt{state.receipts.length === 1 ? '' : 's'}
+              </span>
             </p>
             <p className="export-links">
-              Export CSV:{' '}
-              <a href={exportCsvUrl('items', filters)} download onClick={(event) => shareOnApp(event, 'items')}>
-                items
-              </a>{' '}
-              ·{' '}
-              <a href={exportCsvUrl('receipts', filters)} download onClick={(event) => shareOnApp(event, 'receipts')}>
-                receipts
+              <span className="sr-only">Export CSV:</span>
+              <a
+                className="chip chip-action"
+                href={exportCsvUrl('items', filters)}
+                download
+                onClick={(event) => shareOnApp(event, 'items')}
+              >
+                <Icon name="download" size={16} />
+                Items CSV
+              </a>
+              <a
+                className="chip chip-action"
+                href={exportCsvUrl('receipts', filters)}
+                download
+                onClick={(event) => shareOnApp(event, 'receipts')}
+              >
+                <Icon name="download" size={16} />
+                Receipts CSV
               </a>
             </p>
           </div>
@@ -205,45 +241,58 @@ function ReceiptCard({
     if (highlighted) ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [highlighted])
 
+  const count = receipt.items.length
+  const mainCategory = receipt.items[0]?.category
+
   return (
     <li ref={ref} className={`receipt-card${highlighted ? ' receipt-card-new' : ''}`}>
-      <div className="receipt-head">
-        <div>
-          <p className="receipt-store">
-            {receipt.store}
-            {highlighted && <span className="badge">Saved</span>}
-          </p>
-          <p className="muted">{formatDate(receipt.purchased_at)}</p>
-        </div>
-        <div className="receipt-total">
-          <strong>{formatMoney(receipt.total, receipt.currency)}</strong>
-          <Link to={`/receipts/${receipt.receipt_id}/edit`} className="edit-link">
+      <details open={highlighted}>
+        <summary className="receipt-head">
+          <span className="receipt-avatar" aria-hidden="true">
+            {mainCategory ? categoryIcon(categories, mainCategory) : '🧾'}
+          </span>
+          <span className="receipt-info">
+            <span className="receipt-store">
+              {receipt.store}
+              {highlighted && <span className="badge">Saved</span>}
+            </span>
+            <span className="muted">
+              {formatDate(receipt.purchased_at)} · {count} item{count === 1 ? '' : 's'}
+            </span>
+          </span>
+          <strong className="receipt-amount">{formatMoney(receipt.total, receipt.currency)}</strong>
+          <Icon name="down" size={18} className="receipt-toggle" />
+        </summary>
+        <ul className="items">
+          {receipt.items.map((item) => {
+            const line = lineTotal(item.quantity, item.price)
+            return (
+              <li key={item.item_id} className="item-row">
+                <span className="item-name">
+                  <span aria-hidden="true">{categoryIcon(categories, item.category)}</span> {item.name}
+                  {item.quantity !== '1' && <span className="muted"> × {item.quantity}</span>}
+                </span>
+                <span className="chip chip-small">{item.category}</span>
+                <span className="item-price">
+                  {line === null ? item.price : formatMoney(formatDecimal(line), receipt.currency)}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+        <div className="receipt-actions">
+          <Link to={`/receipts/${receipt.receipt_id}/edit`} className="chip chip-action">
+            <Icon name="pencil" size={16} />
             Edit
           </Link>
           {receipt.image_link && (
-            <a href={receipt.image_link} target="_blank" rel="noreferrer" className="photo-link">
-              📷 Photo
+            <a href={receipt.image_link} target="_blank" rel="noreferrer" className="chip chip-action">
+              <Icon name="image" size={16} />
+              Photo
             </a>
           )}
         </div>
-      </div>
-      <ul className="items">
-        {receipt.items.map((item) => {
-          const line = lineTotal(item.quantity, item.price)
-          return (
-            <li key={item.item_id} className="item-row">
-              <span className="item-name">
-                <span aria-hidden="true">{categoryIcon(categories, item.category)}</span> {item.name}
-                {item.quantity !== '1' && <span className="muted"> × {item.quantity}</span>}
-              </span>
-              <span className="chip chip-small">{item.category}</span>
-              <span className="item-price">
-                {line === null ? item.price : formatMoney(formatDecimal(line), receipt.currency)}
-              </span>
-            </li>
-          )
-        })}
-      </ul>
+      </details>
     </li>
   )
 }

@@ -6,13 +6,16 @@ import { MonthlyTrend } from '../components/dashboard/MonthlyTrend'
 import { NotableChanges } from '../components/dashboard/NotableChanges'
 import { SpendingHero } from '../components/dashboard/SpendingHero'
 import { TopLists } from '../components/dashboard/TopLists'
+import { useAuth } from '../auth/AuthContext'
+import { DashboardSkeleton } from '../components/dashboard/DashboardSkeleton'
+import { Icon } from '../components/Icon'
+import { MonthSwitch } from '../components/MonthSwitch'
 import { useCategories } from '../hooks/useCategories'
 import { formatMonth, todayIso } from '../lib/format'
 
-function shiftMonth(month: string, delta: number): string {
-  const [year, number] = month.split('-').map(Number)
-  const index = year * 12 + (number - 1) + delta
-  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`
+function greeting(): string {
+  const hour = new Date().getHours()
+  return hour < 5 ? 'Good evening' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
 }
 
 export function DashboardPage() {
@@ -21,6 +24,8 @@ export function DashboardPage() {
   const month = searchParams.get('month') ?? thisMonth
   const currency = searchParams.get('currency') ?? ''
   const categories = useCategories()
+  const { user } = useAuth()
+  const firstName = user?.name?.split(/\s+/)[0]
 
   const queryKey = `${month}|${currency}`
   const [loaded, setLoaded] = useState<{ key: string; summary: Summary } | null>(null)
@@ -56,42 +61,20 @@ export function DashboardPage() {
   return (
     <section className="page dashboard">
       <div className="page-title">
-        <h1>Spending patterns</h1>
+        <div>
+          <p className="eyebrow">
+            {greeting()}
+            {firstName && `, ${firstName}`}
+          </p>
+          <h1>Spending patterns</h1>
+        </div>
       </div>
 
       <div className="filters" role="group" aria-label="Dashboard filters">
-        <div className="month-nav">
-          <button
-            type="button"
-            className="button button-secondary button-small"
-            onClick={() => setParam('month', shiftMonth(month, -1))}
-            aria-label="Previous month"
-          >
-            ‹
-          </button>
-          <label className="sr-only" htmlFor="dashboard-month">
-            Month
-          </label>
-          <input
-            id="dashboard-month"
-            type="month"
-            value={month}
-            max={thisMonth}
-            onChange={(event) => setParam('month', event.target.value)}
-          />
-          <button
-            type="button"
-            className="button button-secondary button-small"
-            onClick={() => setParam('month', shiftMonth(month, 1))}
-            disabled={month >= thisMonth}
-            aria-label="Next month"
-          >
-            ›
-          </button>
-        </div>
+        <MonthSwitch month={month} max={thisMonth} onChange={(value) => setParam('month', value)} />
         {summary && summary.currencies.length > 1 && (
-          <label className="filter-compact">
-            Currency
+          <label className="chip-select">
+            <span className="sr-only">Currency</span>
             <select value={summary.currency} onChange={(event) => setParam('currency', event.target.value)}>
               {summary.currencies.map((code) => (
                 <option key={code} value={code}>
@@ -110,7 +93,7 @@ export function DashboardPage() {
           </p>
         ))}
 
-      {!summary && !error && <p className="muted">Loading your spending…</p>}
+      {!summary && !error && <DashboardSkeleton withTitle={false} />}
 
       {summary && (
         <div className={`dashboard-body${refreshing ? ' refreshing' : ''}`} aria-busy={refreshing}>
@@ -122,9 +105,11 @@ export function DashboardPage() {
           </p>
           {summary.receipt_count === 0 && summary.average_total === null ? (
             <div className="card empty">
+              <img src="/favicon.svg" alt="" width={64} height={64} />
               <p>No receipts in {summary.currency} for this month yet.</p>
               <Link to="/scan" className="button button-primary">
-                📷 Scan a receipt
+                <Icon name="camera" size={20} />
+                Scan a receipt
               </Link>
             </div>
           ) : (

@@ -265,14 +265,18 @@ Updates and deletes always re-read the tabs, so row numbers are correct even if 
 
 ## 7. Frontend
 
-- Pages: Home, Scan (capture → review/edit → save), Transactions, Dashboard ("Patterns"), Ask (chatbot), Settings. A Budget page comes with the savings step (phase 10).
+- Pages: Login, Patterns (home), Transactions, Scan (capture → review/edit → save), Ask (chatbot), Account. A Budget page comes with the savings step (phase 10).
+- **Navigation:** phones get a bottom tab bar (Patterns · Transactions · **Scan** as a raised centre button · Ask · Account) that hides while typing; wide screens (≥ 900 px) get the same links in the top bar. The top bar shows the logo and the user's avatar (→ Account). Layout respects the Android safe areas (edge-to-edge).
+- **Look:** light theme, Plus Jakarta Sans (self-hosted via `@fontsource-variable`, no font requests to Google), soft cards, pink accent `#d63a6f` (passes AA with white text), inline SVG icons (`src/components/Icon.tsx`), skeleton loading, motion off under `prefers-reduced-motion`.
 - Built so far (routes via React Router):
-  - `/` Home: sign-in, Scan and Enter-by-hand buttons, spreadsheet link, categories.
+  - **Login** (no route of its own): anyone who isn't signed in sees it on every route. Mascot, three feature lines, "Continue with Google", and the privacy note (receipts stay in the user's own Drive). On wide screens (≥ 900 px) it splits into two columns: the pitch on the left, a "Get started" sign-in card on the right. Sign-in errors show here. While the session is checked a splash shows; if the server can't be reached, a "Try again" button.
+  - `/` **Patterns** (the home page): the dashboard (see below), with a greeting. `/dashboard` redirects here.
+  - `/account`: profile, spreadsheet link, enter-by-hand link, categories, Sign out.
   - `/scan`: take or choose a photo; scanning starts at once on a "Scanning your receipt…" screen (on-device OCR, then the text, and the photo once if needed), then the review screen opens.
-  - `/transactions`: **all** receipts with their items by default, newest purchase date first, grouped under month headings with each month's total (per currency). Optional filters for one month ("This month" shortcut) and category, kept in the URL. After saving, the list opens unfiltered and scrolls to and highlights the saved receipt, so receipts dated in other months are never hidden.
+  - `/transactions`: **all** receipts by default (each card collapsed to store, date, item count and total; tap to see the items, Edit and Photo), newest purchase date first, grouped under month headings with each month's total (per currency). Optional filters as chips (All, This month, a month picker, category), kept in the URL. After saving, the list opens unfiltered and scrolls to and highlights the saved receipt, so receipts dated in other months are never hidden.
   - `/receipts/new` and `/receipts/:id/edit`: the receipt form (store, date, currency, items with quantity, unit price and category, total). The total follows the items' sum until the user edits it. Edit also offers Delete. The currency defaults to `DEFAULT_CURRENCY` (from `/api/auth/me`).
   - Review screen: `/receipts/new` with a scan result in router state. It is pre-filled from the draft, lists the issues, shows the photo, keeps the scanned total as read, and uploads the photo after saving.
-  - Transactions show a 📷 link for receipts with a photo, and "Export CSV: items · receipts" links for the current filters.
+  - Transactions show a Photo link for receipts with a photo, and "Items CSV" / "Receipts CSV" buttons for the current filters.
 - Money in the frontend is handled as decimal strings and bigint math (`src/lib/decimal.ts`), never JS floats.
 
 ### Export (CSV)
@@ -305,7 +309,7 @@ Purpose: answer questions about actual spending ("What did I spend most on this 
 - **Privacy:** questions and the spending data the tools return are sent to Claude (Anthropic). The Ask page says so.
 - **Tests:** a fake streaming client covers the loop; `RUN_LIVE_CLAUDE=1 pytest tests/live` asks the real model questions in English and Japanese about known receipts (a few cents per run).
 
-### Dashboard ("Patterns", `/dashboard`)
+### Dashboard ("Patterns", `/`)
 
 Purpose: see actual spending patterns. Computed on the backend with pandas (`app/services/summary.py`) from all receipts, served by `GET /api/summary`.
 

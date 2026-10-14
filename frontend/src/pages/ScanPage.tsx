@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { errorMessages, scanReceipt, type ScanResult } from '../api/client'
+import { Icon } from '../components/Icon'
 import { prepareImage, toBase64, type PreparedImage } from '../lib/image'
 import { recognizeReceipt } from '../ocr'
 
@@ -148,8 +149,11 @@ export function ScanPage() {
           <img className="scan-preview" src={image.previewUrl} alt="Receipt photo" />
         ) : (
           <button type="button" className="scan-placeholder" onClick={() => cameraRef.current?.click()}>
-            <span aria-hidden="true">📷</span>
-            Take a photo of a receipt
+            <span className="scan-placeholder-icon">
+              <Icon name="camera" size={40} />
+            </span>
+            <strong>Take a photo of a receipt</strong>
+            <span className="muted">Lay it flat, in good light, with all four corners showing.</span>
           </button>
         )}
         {inputs}
@@ -161,30 +165,40 @@ export function ScanPage() {
             </p>
           ))}
 
-        <div className="form-actions">
+        <div className="scan-actions">
           {image && step.name === 'error' && (
-            <button type="button" className="button button-primary" onClick={() => void scan(image)}>
+            <button type="button" className="button button-primary button-block" onClick={() => void scan(image)}>
               Try again
             </button>
           )}
           <button
             type="button"
-            className={`button ${image ? 'button-secondary' : 'button-primary'}`}
+            className={`button button-block ${image ? 'button-secondary' : 'button-primary'}`}
             onClick={() => cameraRef.current?.click()}
           >
-            📷 {image ? 'Retake' : 'Take photo'}
+            <Icon name="camera" size={20} />
+            {image ? 'Retake' : 'Take photo'}
           </button>
-          <button type="button" className="button button-secondary" onClick={() => galleryRef.current?.click()}>
-            🖼️ Choose from gallery
+          <button
+            type="button"
+            className="button button-secondary button-block"
+            onClick={() => galleryRef.current?.click()}
+          >
+            <Icon name="image" size={20} />
+            Choose from gallery
           </button>
-          <Link to="/receipts/new" className="button button-ghost">
+          <Link to="/receipts/new" className="button button-ghost button-block">
+            <Icon name="pencil" size={20} />
             Enter by hand
           </Link>
         </div>
 
-        <p className="muted field-note">
-          Scanning starts as soon as you take or choose a photo. The text is read on your device; only the text goes
-          to the server, plus the photo if the first reading doesn't add up. You'll check everything before saving.
+        <p className="privacy-note">
+          <Icon name="lock" size={16} />
+          <span>
+            The text is read on your device; only the text goes to the server, plus the photo if the first reading
+            doesn't add up. You'll check everything before saving.
+          </span>
         </p>
       </div>
     </section>
