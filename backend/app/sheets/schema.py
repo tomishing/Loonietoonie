@@ -32,8 +32,19 @@ TABS: dict[str, tuple[str, ...]] = {
         "updated_at",
         "deleted",
     ),
-    "items": ("item_id", "receipt_id", "name", "quantity", "price", "category", "updated_at", "deleted"),
+    "items": (
+        "item_id",
+        "receipt_id",
+        "name",
+        "quantity",
+        "price",
+        "category",
+        "subcategory",
+        "updated_at",
+        "deleted",
+    ),
     "categories": ("name", "icon", "updated_at", "deleted"),
+    "subcategories": ("category", "name", "updated_at", "deleted"),
     "budgets": ("month", "category", "amount", "updated_at", "deleted"),
     "settings": ("key", "value", "updated_at"),
     "ocr_labels": ("receipt_id", "field", "model_value", "corrected_value"),
@@ -55,6 +66,34 @@ DEFAULT_CATEGORIES: tuple[tuple[str, str], ...] = (
     ("Tax & Fees", "🧾"),
     ("Other", "📦"),
 )
+
+# Written when the subcategories tab is created (new spreadsheets, and existing ones on migration).
+DEFAULT_SUBCATEGORIES: dict[str, tuple[str, ...]] = {
+    "Groceries": (
+        "Fresh Fruit & Vegetables",
+        "Meat & Seafood",
+        "Tofu & Plant Protein",
+        "Dairy & Eggs",
+        "Bakery",
+        "Pantry",
+        "Rice, Grains & Cereal",
+        "Frozen",
+        "Snacks & Sweets",
+        "Drinks",
+    ),
+    "Dining Out": ("Restaurants", "Fast Food", "Coffee & Cafés", "Delivery", "Bars"),
+    "Household": ("Cleaning", "Paper Goods", "Kitchen", "Furniture & Decor", "Tools & Hardware"),
+    "Transportation": ("Fuel", "Public Transit", "Taxi & Rideshare", "Parking", "Car Maintenance"),
+    "Utilities": ("Electricity", "Gas & Heating", "Water", "Internet", "Phone"),
+    "Housing": ("Rent & Mortgage", "Repairs", "Insurance"),
+    "Health": ("Pharmacy", "Vitamins & Supplements", "Medical & Dental", "Vision"),
+    "Personal Care": ("Hair", "Skin Care", "Cosmetics", "Hygiene"),
+    "Clothing": ("Clothes", "Shoes", "Accessories"),
+    "Entertainment": ("Movies & Shows", "Games", "Books & Music", "Events", "Subscriptions"),
+    "Kids": ("Toys", "School Supplies", "Baby Care", "Activities"),
+    "Pets": ("Pet Food", "Vet", "Pet Supplies"),
+    "Tax & Fees": ("Sales Tax", "Deposits & Eco Fees", "Bag Fees", "Tips & Service"),
+}
 
 TAX_CATEGORY = "Tax & Fees"
 # Categories the app relies on. Added to existing spreadsheets on sign-in unless a row

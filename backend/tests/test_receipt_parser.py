@@ -14,16 +14,28 @@ from app.ai.receipt_parser import (
     ReceiptParseError,
     output_schema,
 )
+from app.storage.models import Category
 
 CATEGORIES = ["Groceries", "Tax & Fees", "Other"]
+CATEGORY_LIST = [
+    Category(name="Groceries", icon="", subcategories=["Produce", "Dairy & Eggs"]),
+    Category(name="Tax & Fees", icon="", subcategories=["Sales Tax"]),
+    Category(name="Other", icon=""),
+]
 ANSWER = {
     "store": "FreshCo",
     "purchased_at": "2026-10-05",
     "currency": "CAD",
     "total": "5.65",
     "items": [
-        {"name": "Milk", "quantity": "1", "unit_price": "5.00", "category": "Groceries"},
-        {"name": "HST", "quantity": "1", "unit_price": "0.65", "category": "Tax & Fees"},
+        {
+            "name": "Milk",
+            "quantity": "1",
+            "unit_price": "5.00",
+            "category": "Groceries",
+            "subcategory": "Dairy & Eggs",
+        },
+        {"name": "HST", "quantity": "1", "unit_price": "0.65", "category": "Tax & Fees", "subcategory": None},
     ],
 }
 
@@ -55,7 +67,7 @@ def make_parser(messages: FakeMessages) -> ClaudeReceiptParser:
 
 def parse(parser: ClaudeReceiptParser, image: ReceiptImage | None = None) -> Any:
     return parser.parse(
-        "FRESHCO\nMILK 5.00\nHST 0.65\nTOTAL 5.65", CATEGORIES, "CAD", date(2026, 10, 13), image
+        "FRESHCO\nMILK 5.00\nHST 0.65\nTOTAL 5.65", CATEGORY_LIST, "CAD", date(2026, 10, 13), image
     )
 
 
@@ -66,6 +78,7 @@ def test_sends_text_only_request_with_strict_schema() -> None:
 
     assert result.total == "5.65"
     assert result.items[1].category == "Tax & Fees"
+    assert result.items[0].subcategory == "Dairy & Eggs"
     [request] = messages.requests
     assert request["model"] == "claude-haiku-5-5"
     assert request["system"] == SYSTEM_PROMPT
@@ -74,7 +87,8 @@ def test_sends_text_only_request_with_strict_schema() -> None:
     assert content["type"] == "text"
     assert "MILK 5.00" in content["text"]
     assert "default currency is CAD" in content["text"]
-    assert "Tax & Fees" in content["text"]
+    assert "- Groceries: Produce; Dairy & Eggs" in content["text"]
+    assert "- Other (no subcategories)" in content["text"]
 
 
 def test_retry_attaches_photo_before_text() -> None:
@@ -93,6 +107,7 @@ def test_schema_limits_categories_and_forbids_extra_fields() -> None:
 
     item_schema = schema["properties"]["items"]["items"]
     assert item_schema["properties"]["category"]["enum"] == CATEGORIES
+    assert "subcategory" in item_schema["required"]
     assert schema["additionalProperties"] is False
     assert item_schema["additionalProperties"] is False
 

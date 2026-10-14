@@ -83,6 +83,7 @@ const FIELD_LABELS: Record<string, string> = {
   quantity: 'quantity',
   price: 'price',
   category: 'category',
+  subcategory: 'subcategory',
 }
 
 /** Human-readable messages for an API error, e.g. "Item 2 price: Use at most 3 decimal places". */
@@ -140,6 +141,7 @@ export async function getCurrentUser(): Promise<User | null> {
 export interface Category {
   name: string
   icon: string
+  subcategories: string[]
 }
 
 export function getCategories(): Promise<Category[]> {
@@ -153,6 +155,8 @@ export interface Item {
   quantity: string
   price: string
   category: string
+  /** "" when the item has no subcategory. */
+  subcategory: string
 }
 
 export interface Receipt {
@@ -173,6 +177,8 @@ export interface ItemInput {
   quantity: string
   price: string
   category: string
+  /** Optional; must be one of the category's subcategories. */
+  subcategory?: string | null
 }
 
 export interface ReceiptInput {
@@ -187,6 +193,7 @@ export interface ReceiptFilters {
   from?: string
   to?: string
   category?: string
+  subcategory?: string
 }
 
 export function listReceipts(filters: ReceiptFilters = {}): Promise<Receipt[]> {
@@ -222,6 +229,7 @@ export interface ScanItem {
   quantity: string | null
   price: string | null
   category: string
+  subcategory: string | null
 }
 
 export interface ScanDraft {
@@ -285,6 +293,15 @@ export interface CategorySpending {
   previous_total: string
   average_total: string | null
   share: string
+  /** Drill-down; empty when none of the category's items have a subcategory. */
+  subcategories: SubcategorySpending[]
+}
+
+export interface SubcategorySpending {
+  /** "" for items without a subcategory. */
+  subcategory: string
+  total: string
+  average_total: string | null
 }
 
 export interface TrendMonth {

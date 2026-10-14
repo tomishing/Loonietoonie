@@ -81,8 +81,19 @@ class SheetsRepository:
     # --- categories ----------------------------------------------------------
 
     def list_categories(self) -> list[Category]:
+        subcategories: dict[str, list[str]] = {}
+        for row in _active(self._read("subcategories")):
+            category = row.values.get("category", "").strip().casefold()
+            name = row.values.get("name", "").strip()
+            names = subcategories.setdefault(category, [])
+            if category and name and name.casefold() not in {n.casefold() for n in names}:
+                names.append(name)
         return [
-            Category(name=row.values["name"].strip(), icon=row.values.get("icon", "").strip())
+            Category(
+                name=row.values["name"].strip(),
+                icon=row.values.get("icon", "").strip(),
+                subcategories=subcategories.get(row.values["name"].strip().casefold(), []),
+            )
             for row in _active(self._read("categories"))
             if row.values.get("name", "").strip()
         ]
@@ -91,13 +102,12 @@ class SheetsRepository:
 
     def list_receipts(self, filters: ReceiptFilter) -> list[Receipt]:
         receipts = self._load_receipts(self._read("receipts"), self._read("items"))
-        category = filters.category.strip().casefold() if filters.category else None
         selected = [
             receipt
             for receipt in receipts
             if (filters.date_from is None or receipt.purchased_at >= filters.date_from)
             and (filters.date_to is None or receipt.purchased_at <= filters.date_to)
-            and (category is None or any(item.category.casefold() == category for item in receipt.items))
+            and (not filters.filters_items or any(filters.matches_item(item) for item in receipt.items))
         ]
         return sorted(selected, key=lambda r: (r.purchased_at, r.created_at), reverse=True)
 
@@ -335,6 +345,7 @@ def _item_record(item_id: str, receipt_id: str, item: ItemDraft, now: str) -> Re
         "quantity": _money(item.quantity),
         "price": _money(item.price),
         "category": item.category,
+        "subcategory": item.subcategory or "",
         "updated_at": now,
         "deleted": FALSE,
     }
@@ -361,6 +372,7 @@ def _build_receipt(record: Record, item_records: list[Record]) -> Receipt:
                     quantity=_parse_decimal(item.get("quantity", ""), default=Decimal(1)),
                     price=_parse_decimal(item.get("price", "")),
                     category=item.get("category", ""),
+                    subcategory=item.get("subcategory", "").strip(),
                 )
             )
         except (KeyError, ValueError, InvalidOperation):

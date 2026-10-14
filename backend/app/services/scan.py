@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 from pydantic import BaseModel
 
 from app.ai.receipt_parser import ParsedReceipt, ReceiptImage, ReceiptParser
+from app.storage.models import Category
 from app.storage.repository import Repository
 
 # Amounts may differ from the total by this many of the currency's smallest unit (rounding).
@@ -40,6 +41,7 @@ class ScanItem(BaseModel):
     quantity: Decimal | None
     price: Decimal | None  # unit price
     category: str
+    subcategory: str | None = None
 
 
 class ScanDraft(BaseModel):
@@ -100,7 +102,7 @@ def _fmt(value: Decimal) -> str:
 
 
 def normalize(
-    parsed: ParsedReceipt, categories: list[str], default_currency: str
+    parsed: ParsedReceipt, categories: list[Category], default_currency: str
 ) -> tuple[ScanDraft, list[ScanIssue]]:
     """Convert Claude's strings into typed values, noting anything that couldn't be read."""
     issues: list[ScanIssue] = []
@@ -121,8 +123,10 @@ def normalize(
         except ValueError:
             purchased_at = None
 
-    by_name = {name.casefold(): name for name in categories}
-    fallback = by_name.get("other", categories[0])
+    by_name = {c.name.casefold(): c.name for c in categories}
+    fallback = by_name.get("other", categories[0].name)
+    # A subcategory only counts if it belongs to the item's (final) category.
+    subcategories = {c.name: {s.casefold(): s for s in c.subcategories} for c in categories}
     items: list[ScanItem] = []
     for index, item in enumerate(parsed.items):
         quantity = parse_money(item.quantity) if item.quantity.strip() else Decimal(1)
@@ -134,12 +138,15 @@ def normalize(
                     message=f"Couldn't read the quantity or price of item {index + 1} ({item.name}).",
                 )
             )
+        category = by_name.get(item.category.strip().casefold(), fallback)
+        subcategory = subcategories.get(category, {}).get((item.subcategory or "").strip().casefold())
         items.append(
             ScanItem(
                 name=item.name.strip(),
                 quantity=quantity if quantity is not None and quantity > 0 else None,
                 price=price,
-                category=by_name.get(item.category.strip().casefold(), fallback),
+                category=category,
+                subcategory=subcategory,
             )
         )
 
@@ -200,7 +207,7 @@ def scan_receipt(
         issue = ScanIssue(code="no_text", message="No text was recognized in the photo.")
         return ScanResult(draft=empty, issues=[issue], needs_image=True, used_image=False)
 
-    categories = [category.name for category in repository.list_categories()] or ["Other"]
+    categories = repository.list_categories() or [Category(name="Other", icon="")]
     parsed = parser.parse(ocr_text, categories, default_currency, today, image)
     draft, issues = normalize(parsed, categories, default_currency)
     issues += validate(draft, today)

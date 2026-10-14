@@ -1,5 +1,6 @@
 """Find or create the user's LoonieToonie spreadsheet and bring its tabs up to date."""
 
+import threading
 from typing import Any
 
 from gspread.utils import rowcol_to_a1
@@ -7,6 +8,7 @@ from gspread.utils import rowcol_to_a1
 from app.sheets.api import SheetInfo, SheetsApi
 from app.sheets.schema import (
     DEFAULT_CATEGORIES,
+    DEFAULT_SUBCATEGORIES,
     FALSE,
     FOLDER_MARKER,
     FOLDER_MIME_TYPE,
@@ -18,6 +20,10 @@ from app.sheets.schema import (
     TABS,
     tab_range,
 )
+
+# Spreadsheets already migrated by this server process (see migrate_once).
+_migrated: set[str] = set()
+_migrated_lock = threading.Lock()
 
 
 def ensure_spreadsheet(api: SheetsApi, now: str) -> str:
@@ -35,6 +41,8 @@ def ensure_spreadsheet(api: SheetsApi, now: str) -> str:
         )
 
     migrate(api, spreadsheet_id, now)
+    with _migrated_lock:
+        _migrated.add(spreadsheet_id)
     return spreadsheet_id
 
 
@@ -85,6 +93,13 @@ def migrate(api: SheetsApi, spreadsheet_id: str, now: str) -> None:
     if "categories" in created:
         rows = [[name, icon, now, FALSE] for name, icon in DEFAULT_CATEGORIES]
         values.append((tab_range("categories", "A2"), rows))
+    if "subcategories" in created:
+        rows = [
+            [category, name, now, FALSE]
+            for category, names in DEFAULT_SUBCATEGORIES.items()
+            for name in names
+        ]
+        values.append((tab_range("subcategories", "A2"), rows))
 
     if requests:
         api.batch_update(spreadsheet_id, requests)
@@ -93,6 +108,20 @@ def migrate(api: SheetsApi, spreadsheet_id: str, now: str) -> None:
 
     if "categories" not in created:
         _add_required_categories(api, spreadsheet_id, now)
+
+
+def migrate_once(api: SheetsApi, spreadsheet_id: str, now: str) -> None:
+    """Migrate a spreadsheet the first time this server process uses it.
+
+    Sign-in already migrates, but sessions last for weeks: this brings a spreadsheet up to
+    date after a schema change without asking everyone to sign in again.
+    """
+    with _migrated_lock:
+        if spreadsheet_id in _migrated:
+            return
+    migrate(api, spreadsheet_id, now)
+    with _migrated_lock:
+        _migrated.add(spreadsheet_id)
 
 
 def _add_required_categories(api: SheetsApi, spreadsheet_id: str, now: str) -> None:

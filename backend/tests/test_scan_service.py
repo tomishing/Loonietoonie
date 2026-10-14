@@ -9,11 +9,12 @@ from app.storage.models import Category
 
 TODAY = date(2026, 10, 13)
 CATEGORIES = ["Groceries", "Dining Out", "Household", "Health", "Personal Care", "Tax & Fees", "Other"]
+CATEGORY_LIST = [Category(name=name, icon="") for name in CATEGORIES]
 
 
 class FakeRepository:
     def list_categories(self) -> list[Category]:
-        return [Category(name=name, icon="") for name in CATEGORIES]
+        return CATEGORY_LIST
 
 
 class FakeParser:
@@ -209,12 +210,41 @@ def test_no_items_is_blocking() -> None:
 def test_category_names_are_matched_case_insensitively_with_fallback() -> None:
     parsed = receipt("2.00", [item("A", "1.00", "groceries"), item("B", "1.00", "Gadgets")])
 
-    draft, _ = normalize(parsed, CATEGORIES, "CAD")
+    draft, _ = normalize(parsed, CATEGORY_LIST, "CAD")
 
     assert [i.category for i in draft.items] == ["Groceries", "Other"]
 
 
 def test_missing_store_is_reported_but_not_blocking() -> None:
-    draft, _ = normalize(receipt("1.00", [item("A", "1.00")], store="  "), CATEGORIES, "CAD")
+    draft, _ = normalize(receipt("1.00", [item("A", "1.00")], store="  "), CATEGORY_LIST, "CAD")
 
     assert [i.code for i in validate(draft, TODAY)] == ["store_missing"]
+
+
+def test_subcategory_is_kept_only_when_it_belongs_to_the_category() -> None:
+    categories = [
+        Category(name="Groceries", icon="", subcategories=["Bakery", "Produce"]),
+        Category(name="Other", icon=""),
+    ]
+    parsed = receipt(
+        "4.00",
+        [
+            item("Bread", "1.00", "Groceries").model_copy(update={"subcategory": "bakery"}),
+            item("Apples", "1.00", "Groceries").model_copy(
+                update={"subcategory": "Fruit"}
+            ),  # not in the list
+            item("Widget", "1.00", "Gadgets").model_copy(
+                update={"subcategory": "Bakery"}
+            ),  # category fell back
+            item("Milk", "1.00", "Groceries"),
+        ],
+    )
+
+    draft, _ = normalize(parsed, categories, "CAD")
+
+    assert [(i.category, i.subcategory) for i in draft.items] == [
+        ("Groceries", "Bakery"),
+        ("Groceries", None),
+        ("Other", None),
+        ("Groceries", None),
+    ]

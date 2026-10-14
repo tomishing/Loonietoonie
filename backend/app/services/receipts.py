@@ -24,27 +24,54 @@ def _error(loc: list[str | int], msg: str) -> dict[str, object]:
 
 
 def _validate(repository: Repository, draft: ReceiptDraft, existing: Receipt | None) -> ReceiptDraft:
-    """Check the draft against the user's data. Category names are matched case-insensitively."""
+    """Check the draft against the user's data. Category and subcategory names are matched
+    case-insensitively and saved with the sheet's spelling. A subcategory must belong to its category,
+    except that an edited item may keep the subcategory it already had (renamed or removed later).
+    """
     errors: list[dict[str, object]] = []
 
     if draft.purchased_at > date.today() + timedelta(days=MAX_DAYS_IN_FUTURE):
         errors.append(_error(["purchased_at"], "The purchase date can't be in the future"))
 
-    categories = {category.name.casefold(): category.name for category in repository.list_categories()}
-    existing_ids = {item.item_id for item in existing.items} if existing else set()
+    listed = repository.list_categories()
+    categories = {category.name.casefold(): category.name for category in listed}
+    subcategories = {
+        category.name.casefold(): {name.casefold(): name for name in category.subcategories}
+        for category in listed
+    }
+    existing_items = {item.item_id: item for item in existing.items} if existing else {}
+    existing_ids = set(existing_items)
     seen_ids: set[str] = set()
     items = []
     for index, item in enumerate(draft.items):
         canonical = categories.get(item.category.casefold())
         if canonical is None:
             errors.append(_error(["items", index, "category"], f"Unknown category '{item.category}'"))
+        subcategory = item.subcategory
+        previous = existing_items.get(item.item_id or "")
+        kept = (
+            previous is not None
+            and subcategory is not None
+            and previous.category == canonical
+            and previous.subcategory.casefold() == subcategory.casefold()
+        )
+        if subcategory is not None and canonical is not None and not kept:
+            subcategory = subcategories[canonical.casefold()].get(subcategory.casefold())
+            if subcategory is None:
+                errors.append(
+                    _error(
+                        ["items", index, "subcategory"],
+                        f"'{item.subcategory}' isn't a subcategory of {canonical}",
+                    )
+                )
         if item.item_id is not None:
             if item.item_id not in existing_ids:
                 errors.append(_error(["items", index, "item_id"], "This item doesn't belong to the receipt"))
             elif item.item_id in seen_ids:
                 errors.append(_error(["items", index, "item_id"], "This item appears twice"))
             seen_ids.add(item.item_id)
-        items.append(item.model_copy(update={"category": canonical or item.category}))
+        update = {"category": canonical or item.category, "subcategory": subcategory or item.subcategory}
+        items.append(item.model_copy(update=update))
 
     if errors:
         raise ReceiptValidationError(errors)

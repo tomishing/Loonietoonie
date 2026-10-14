@@ -50,8 +50,11 @@ the data can't answer a question, say so plainly.
 
 How the data works:
 - Each receipt has a date, store, total, currency, and items (name, quantity, unit price, \
-category). Taxes and fees added on top of prices are items in the "Tax & Fees" category, \
-and discounts are items with negative prices.
+category, and an optional subcategory within the category, e.g. Groceries › Bakery). The \
+user's categories are listed below as "Category: subcategory; subcategory" (a name may \
+contain commas). Items without a subcategory have "" as their subcategory. Taxes and fees \
+added on top of prices are items in the "Tax & Fees" category, and discounts are items with \
+negative prices.
 - "(not itemized)" is the part of a receipt total that its items don't cover.
 - Amounts in different currencies are never added together. Use the default currency \
 unless the person asks about another one.
@@ -70,7 +73,8 @@ TOOLS: list[BetaToolParam] = [
     {
         "name": "spending_breakdown",
         "description": (
-            "Total spending in a date range, grouped by category, store, month, item, or weekday, "
+            "Total spending in a date range, grouped by category, subcategory, store, month, item, or "
+            "weekday, "
             "with optional filters. Returns the overall total and one row per group (largest first; "
             f"months and weekdays in order). At most {MAX_ROWS} rows."
         ),
@@ -84,9 +88,17 @@ TOOLS: list[BetaToolParam] = [
                     "format": "date",
                     "description": "Last day, YYYY-MM-DD (inclusive)",
                 },
-                "group_by": {"type": "string", "enum": ["category", "store", "month", "item", "weekday"]},
+                "group_by": {
+                    "type": "string",
+                    "enum": ["category", "subcategory", "store", "month", "item", "weekday"],
+                    "description": "subcategory rows are 'Category › Subcategory'",
+                },
                 "currency": {"type": ["string", "null"], "description": "ISO code; null = default currency"},
                 "category": {"type": ["string", "null"], "description": "Only this category (exact name)"},
+                "subcategory": {
+                    "type": ["string", "null"],
+                    "description": "Only this subcategory (exact name; combine with category)",
+                },
                 "store": {"type": ["string", "null"], "description": "Only stores whose name contains this"},
                 "item_contains": {
                     "type": ["string", "null"],
@@ -102,8 +114,8 @@ TOOLS: list[BetaToolParam] = [
         "name": "find_receipts",
         "description": (
             "Individual receipts in a date range (newest first) with their items, optionally filtered "
-            f"by category, store, or item name. Returns the count and total of all matches and up to "
-            f"{MAX_RECEIPTS} receipts."
+            "by category, subcategory, store, or item name. Returns the count and total of all matches "
+            f"and up to {MAX_RECEIPTS} receipts."
         ),
         "eager_input_streaming": True,
         "input_schema": {
@@ -113,6 +125,7 @@ TOOLS: list[BetaToolParam] = [
                 "date_to": {"type": "string", "format": "date"},
                 "currency": {"type": ["string", "null"]},
                 "category": {"type": ["string", "null"]},
+                "subcategory": {"type": ["string", "null"]},
                 "store": {"type": ["string", "null"]},
                 "item_contains": {"type": ["string", "null"]},
                 "limit": {"type": ["integer", "null"], "description": f"Max receipts (1-{MAX_RECEIPTS})"},

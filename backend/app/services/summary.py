@@ -44,12 +44,20 @@ class Period(BaseModel):
     partial: bool
 
 
+class SubcategorySpending(BaseModel):
+    subcategory: str  # "" for items without a subcategory
+    total: Decimal
+    average_total: Decimal | None
+
+
 class CategorySpending(BaseModel):
     category: str
     total: Decimal
     previous_total: Decimal
     average_total: Decimal | None
     share: Decimal  # of this period's total, 0–1
+    # Drill-down; empty when none of the category's items have a subcategory.
+    subcategories: list[SubcategorySpending] = []
 
 
 class TrendMonth(BaseModel):
@@ -116,7 +124,7 @@ def _sum(series: "pd.Series[Any]") -> Decimal:
 @dataclass(frozen=True)
 class Frames:
     receipts: pd.DataFrame  # receipt_id, date, month, day, store, total
-    lines: pd.DataFrame  # receipt_id, date, month, day, store, category, name, key, amount
+    lines: pd.DataFrame  # receipt_id, date, month, day, store, category, subcategory, name, key, amount
 
 
 def build_frames(receipts: list[Receipt]) -> Frames:
@@ -149,6 +157,7 @@ def build_frames(receipts: list[Receipt]) -> Frames:
                     "day": day,
                     "store": receipt.store.strip(),
                     "category": item.category,
+                    "subcategory": item.subcategory,
                     "name": item.name.strip(),
                     "key": item.name.strip().casefold(),
                     "amount": amount,
@@ -163,13 +172,25 @@ def build_frames(receipts: list[Receipt]) -> Frames:
                     "day": day,
                     "store": receipt.store.strip(),
                     "category": NOT_ITEMIZED,
+                    "subcategory": "",
                     "name": "",
                     "key": "",
                     "amount": receipt.total - itemized,
                 }
             )
     receipt_columns = ["receipt_id", "date", "month", "day", "store", "total"]
-    line_columns = ["receipt_id", "date", "month", "day", "store", "category", "name", "key", "amount"]
+    line_columns = [
+        "receipt_id",
+        "date",
+        "month",
+        "day",
+        "store",
+        "category",
+        "subcategory",
+        "name",
+        "key",
+        "amount",
+    ]
     return Frames(
         receipts=pd.DataFrame(receipt_rows, columns=receipt_columns).astype({"total": object}),
         lines=pd.DataFrame(line_rows, columns=line_columns).astype({"amount": object}),
@@ -185,6 +206,45 @@ def _by_category(lines: pd.DataFrame) -> dict[str, Decimal]:
     if lines.empty:
         return {}
     return {str(name): _dec(value) for name, value in lines.groupby("category")["amount"].sum().items()}
+
+
+def _by_subcategory(lines: pd.DataFrame) -> dict[tuple[str, str], Decimal]:
+    if lines.empty:
+        return {}
+    grouped = lines.groupby(["category", "subcategory"])["amount"].sum()
+    result: dict[tuple[str, str], Decimal] = {}
+    for key, value in grouped.items():
+        pair: tuple[object, ...] = tuple(key) if isinstance(key, tuple) else (key, "")
+        result[(str(pair[0]), str(pair[1]))] = _dec(value)
+    return result
+
+
+def _subcategories(
+    category: str,
+    current: dict[tuple[str, str], Decimal],
+    history: list[dict[tuple[str, str], Decimal]],
+) -> list[SubcategorySpending]:
+    """This period's spending per subcategory of one category, with the usual month."""
+    names = {sub for cat, sub in current if cat == category}
+    for month_history in history:
+        names |= {sub for cat, sub in month_history if cat == category}
+    if not any(names):
+        return []
+    rows = [
+        SubcategorySpending(
+            subcategory=name,
+            total=current.get((category, name), Decimal(0)),
+            average_total=_cents(
+                sum((h.get((category, name), Decimal(0)) for h in history), Decimal(0)) / len(history)
+            )
+            if history
+            else None,
+        )
+        for name in names
+    ]
+    # Largest first; "no subcategory" last so the named ones lead.
+    rows.sort(key=lambda r: (r.subcategory == "", -r.total, -(r.average_total or 0), r.subcategory))
+    return rows
 
 
 def summarize(
@@ -222,6 +282,8 @@ def summarize(
 
     # --- categories ------------------------------------------------------------------
     current_by_category = _by_category(_window(lines, month, last_day))
+    current_by_sub = _by_subcategory(_window(lines, month, last_day))
+    history_by_sub = [_by_subcategory(_window(lines, m, last_day)) for m in history]
     previous_by_category = _by_category(_window(lines, earlier[0], last_day))
     history_by_category = [_by_category(_window(lines, m, last_day)) for m in history]
     names = set(current_by_category) | set(previous_by_category)
@@ -245,6 +307,7 @@ def summarize(
                 share=(spent / total).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
                 if total
                 else Decimal(0),
+                subcategories=_subcategories(name, current_by_sub, history_by_sub),
             )
         )
     categories.sort(key=lambda c: (-c.total, -(c.average_total or 0), c.category))

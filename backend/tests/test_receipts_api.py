@@ -206,3 +206,66 @@ def test_receipts_require_sign_in() -> None:
         assert client.get("/api/receipts").status_code == 401
         assert client.post("/api/receipts", json=body()).status_code == 401
     app.dependency_overrides.clear()
+
+
+def test_subcategory_is_saved_with_the_sheet_spelling(client: TestClient) -> None:
+    items = [
+        {"name": "Milk", "price": "3.49", "category": "Groceries", "subcategory": "dairy & eggs"},
+        {"name": "Soap", "quantity": "2", "price": "1.99", "category": "Household", "subcategory": " "},
+    ]
+    created = client.post("/api/receipts", json=body(items=items))
+
+    assert created.status_code == 201
+    saved = created.json()["items"]
+    assert [(i["category"], i["subcategory"]) for i in saved] == [
+        ("Groceries", "Dairy & Eggs"),
+        ("Household", ""),
+    ]
+    fetched = client.get(f"/api/receipts/{created.json()['receipt_id']}").json()
+    assert fetched["items"][0]["subcategory"] == "Dairy & Eggs"
+
+
+def test_subcategory_must_belong_to_its_category(client: TestClient) -> None:
+    items = [{"name": "Milk", "price": "3.49", "category": "Household", "subcategory": "Dairy & Eggs"}]
+    response = client.post("/api/receipts", json=body(items=items, total="3.49"))
+
+    assert response.status_code == 422
+    assert errors(response) == ["body.items.0.subcategory"]
+
+
+def test_list_receipts_by_subcategory(client: TestClient) -> None:
+    bakery = [{"name": "Bread", "price": "3.00", "category": "Groceries", "subcategory": "Bakery"}]
+    fruit = "Fresh Fruit & Vegetables"
+    produce = [{"name": "Apples", "price": "4.00", "category": "Groceries", "subcategory": fruit}]
+    client.post("/api/receipts", json=body(items=bakery, total="3.00"))
+    client.post("/api/receipts", json=body(items=produce, total="4.00"))
+
+    response = client.get("/api/receipts", params={"category": "Groceries", "subcategory": "bakery"})
+
+    assert [r["items"][0]["name"] for r in response.json()] == ["Bread"]
+
+
+def test_edit_keeps_a_subcategory_that_was_renamed_since() -> None:
+    api = FakeSheetsApi()
+    spreadsheet_id = ensure_spreadsheet(api, "2026-10-13T00:00:00Z")
+    app.dependency_overrides[get_settings] = lambda: make_settings()
+    app.dependency_overrides[get_repository] = lambda: SheetsRepository(
+        api, spreadsheet_id, TabReadCache(ttl_seconds=0)
+    )
+    with TestClient(app) as client:
+        items = [{"name": "Milk", "price": "3.49", "category": "Groceries", "subcategory": "Dairy & Eggs"}]
+        created = client.post("/api/receipts", json=body(items=items, total="3.49")).json()
+        # The user renames the subcategory in the spreadsheet.
+        for row in api.sheet(spreadsheet_id, "subcategories").rows:
+            if row[1] == "Dairy & Eggs":
+                row[1] = "Dairy"
+        url = f"/api/receipts/{created['receipt_id']}"
+        item = created["items"][0]
+
+        kept = client.put(url, json=body(items=[{**item, "name": "Milk 2%"}], total="3.49"))
+        new_item = client.put(url, json=body(items=[{**item, "item_id": None}], total="3.49"))
+    app.dependency_overrides.clear()
+
+    assert kept.status_code == 200
+    assert kept.json()["items"][0]["subcategory"] == "Dairy & Eggs"
+    assert new_item.status_code == 422  # a new item must use a listed subcategory

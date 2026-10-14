@@ -65,6 +65,7 @@ def test_items_export_one_row_per_item_newest_first() -> None:
         "store": "FreshCo",
         "item": "Milk",
         "category": "Groceries",
+        "subcategory": "",
         "quantity": "1",
         "unit_price": "5.49",
         "amount": "5.49",
@@ -105,14 +106,14 @@ def test_japanese_text_survives() -> None:
 
 
 def test_items_export_with_category_keeps_only_that_category() -> None:
-    result = rows(export_csv(RECEIPTS, "items", category="groceries"))
+    result = rows(export_csv(RECEIPTS, "items", ReceiptFilter(category="groceries")))
 
     assert {r["category"] for r in result} == {"Groceries"}
     assert [r["item"] for r in result] == ["おにぎり", "Milk", "Coupon"]
 
 
 def test_receipts_export_with_category_keeps_whole_receipts() -> None:
-    result = rows(export_csv(RECEIPTS, "receipts", category="Dining Out"))
+    result = rows(export_csv(RECEIPTS, "receipts", ReceiptFilter(category="Dining Out")))
 
     assert len(result) == 4  # the endpoint selects receipts; the receipts export doesn't drop any
 
@@ -196,3 +197,16 @@ def test_export_requires_sign_in() -> None:
     with TestClient(app) as client:
         assert client.get("/api/export/csv").status_code == 401
     app.dependency_overrides.clear()
+
+
+def test_items_export_with_subcategory_filter() -> None:
+    receipts = [
+        receipt("2026-09-05", "Metro", [("Bread", "3.00", "Groceries"), ("Apples", "4.00", "Groceries")])
+    ]
+    receipts[0].items[0].subcategory = "Bakery"
+
+    result = rows(export_csv(receipts, "items", ReceiptFilter(subcategory="bakery")))
+
+    assert [(r["item"], r["category"], r["subcategory"]) for r in result] == [
+        ("Bread", "Groceries", "Bakery")
+    ]

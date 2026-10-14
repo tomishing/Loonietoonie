@@ -28,6 +28,8 @@ interface ItemRow {
   quantity: string
   price: string
   category: string
+  /** "" for none. */
+  subcategory: string
 }
 
 interface FormState {
@@ -39,7 +41,14 @@ interface FormState {
 }
 
 let nextKey = 1
-const newItem = (): ItemRow => ({ key: nextKey++, name: '', quantity: '1', price: '', category: '' })
+const newItem = (): ItemRow => ({
+  key: nextKey++,
+  name: '',
+  quantity: '1',
+  price: '',
+  category: '',
+  subcategory: '',
+})
 
 const emptyForm = (currency: string): FormState => ({
   store: '',
@@ -62,6 +71,7 @@ const formFromScan = ({ draft }: ScanResult): FormState => ({
         quantity: item.quantity ?? '1',
         price: item.price ?? '',
         category: item.category,
+        subcategory: item.subcategory ?? '',
       }))
     : [newItem()],
 })
@@ -119,6 +129,7 @@ export function ReceiptFormPage() {
             quantity: item.quantity,
             price: item.price,
             category: item.category,
+            subcategory: item.subcategory,
           })),
         })
         setTotalEdited(true)
@@ -148,6 +159,24 @@ export function ReceiptFormPage() {
       items: current.items.map((item) => (item.key === key ? { ...item, ...changes } : item)),
     }))
 
+  // A new category keeps the subcategory only if the new category has one with that name.
+  const setCategory = (key: number, category: string) =>
+    setForm((current) => ({
+      ...current,
+      items: current.items.map((item) =>
+        item.key === key
+          ? {
+              ...item,
+              category,
+              subcategory: subcategoriesOf(category).includes(item.subcategory) ? item.subcategory : '',
+            }
+          : item,
+      ),
+    }))
+
+  const subcategoriesOf = (category: string): string[] =>
+    categories.status === 'loaded' ? (categories.categories.find((c) => c.name === category)?.subcategories ?? []) : []
+
   const removeItem = (key: number) =>
     setForm((current) => ({ ...current, items: current.items.filter((item) => item.key !== key) }))
 
@@ -169,6 +198,7 @@ export function ReceiptFormPage() {
         quantity: item.quantity,
         price: item.price,
         category: item.category,
+        subcategory: item.subcategory || null,
       })),
     }
     setSaving(true)
@@ -311,7 +341,7 @@ export function ReceiptFormPage() {
                   <span className="sr-only">Item {index + 1} category</span>
                   <select
                     value={item.category}
-                    onChange={(event) => setItem(item.key, { category: event.target.value })}
+                    onChange={(event) => setCategory(item.key, event.target.value)}
                     required
                   >
                     <option value="" disabled>
@@ -330,6 +360,13 @@ export function ReceiptFormPage() {
                       )}
                   </select>
                 </label>
+                <SubcategorySelect
+                  label={`Item ${index + 1} subcategory`}
+                  value={item.subcategory}
+                  options={subcategoriesOf(item.category)}
+                  disabled={!item.category}
+                  onChange={(subcategory) => setItem(item.key, { subcategory })}
+                />
                 <span className="item-line" aria-label={`Item ${index + 1} amount`}>
                   {line === null ? '—' : formatMoney(formatDecimal(line), currency)}
                 </span>
@@ -441,5 +478,35 @@ function ScanSummary({ issues, photoUrl }: { issues: ScanIssue[]; photoUrl: stri
         )}
       </div>
     </div>
+  )
+}
+
+function SubcategorySelect({
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  label: string
+  value: string
+  options: string[]
+  disabled: boolean
+  onChange: (value: string) => void
+}) {
+  // A saved subcategory that was later removed from the list stays selectable.
+  const all = value && !options.includes(value) ? [...options, value] : options
+  return (
+    <label className="item-field-subcategory">
+      <span className="sr-only">{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled || all.length === 0}>
+        <option value="">{all.length === 0 && !disabled ? 'No subcategories' : 'Subcategory (optional)'}</option>
+        {all.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+      </select>
+    </label>
   )
 }

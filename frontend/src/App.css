@@ -1,5 +1,12 @@
 /* ---------- app shell ---------- */
 
+/* Registered so it can be animated: see the "while typing" rules below. */
+@property --nav-space {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
 .app {
   /* Room the bottom tab bar takes; 0 while typing (the bar hides) and on wide screens. */
   --nav-space: calc(var(--tabbar-h) + var(--safe-bottom));
@@ -89,6 +96,9 @@
   position: fixed;
   inset: auto 0 0;
   z-index: 20;
+  transition:
+    transform 0.2s ease 0.3s,
+    visibility 0s linear 0.3s;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   align-items: end;
@@ -161,13 +171,22 @@
 }
 
 @media (max-width: 899px) {
-  /* While typing, the keyboard needs the room: hide the tab bar. */
+  /* The bar and its space come back 0.3 s after typing ends. Tapping Save blurs the field
+     first; without the delay the Save bar would jump up under the finger and the tap miss. */
+  .app {
+    transition: --nav-space 0s linear 0.3s;
+  }
+
+  /* While typing, the keyboard needs the room: hide the tab bar (at once). */
   .app:has(input:not([type="month"]):focus, textarea:focus, select:focus) {
     --nav-space: 0px;
+    transition: none;
   }
 
   .app:has(input:not([type="month"]):focus, textarea:focus, select:focus) .tab-bar {
-    display: none;
+    visibility: hidden;
+    transform: translateY(100%);
+    transition: none;
   }
 }
 
@@ -816,6 +835,10 @@ textarea {
     box-shadow 0.15s;
 }
 
+select:disabled {
+  opacity: 0.55;
+}
+
 input:focus,
 select:focus,
 textarea:focus {
@@ -956,13 +979,37 @@ label {
   font-size: 1.05rem;
 }
 
+.categories-note {
+  margin: -6px 0 12px;
+  font-size: 0.82rem;
+}
+
 .categories ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.category-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.category-entry:first-child {
+  border-top: none;
+}
+
+.category-entry-name {
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.category-entry-subs {
+  padding-left: 1.6em;
+  font-size: 0.82rem;
 }
 
 /* ---------- transactions ---------- */
@@ -1198,7 +1245,7 @@ details[open] .receipt-toggle {
 
 .item-editor {
   display: grid;
-  grid-template-columns: 2fr 0.7fr 1fr 1.6fr auto auto;
+  grid-template-columns: 2fr 0.7fr 1fr 1.4fr 1.4fr auto auto;
   align-items: end;
   gap: 8px;
   padding-bottom: 10px;
@@ -1278,7 +1325,8 @@ details[open] .receipt-toggle {
   }
 
   .item-field-name,
-  .item-field-category {
+  .item-field-category,
+  .item-field-subcategory {
     grid-column: 1 / -1;
   }
 
@@ -1711,6 +1759,62 @@ details[open] .receipt-toggle {
 
 .category-bar:focus-visible {
   box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* A category row that opens its subcategories is a button that looks like the others. */
+button.category-bar {
+  width: 100%;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.drill-hint {
+  margin: -4px 0 8px;
+  font-size: 0.82rem;
+}
+
+.drill-chevron {
+  margin-left: 4px;
+  color: var(--text-muted);
+  vertical-align: -3px;
+  transition: transform 0.2s;
+}
+
+.category-item-open .drill-chevron {
+  transform: rotate(180deg);
+}
+
+.category-item {
+  list-style: none;
+}
+
+.category-item-open {
+  margin: 2px 0 6px;
+  border-radius: 14px;
+  background: var(--hover-wash);
+}
+
+.subcategory-bars {
+  margin: 0;
+  padding: 0 0 6px 18px;
+  list-style: none;
+}
+
+.subcategory-bar {
+  padding-block: 4px;
+  font-size: 0.9rem;
+}
+
+.subcategory-bar .bar-track {
+  height: 8px;
+}
+
+.subcategory-bar .category-amount {
+  font-weight: 500;
 }
 
 .category-name {

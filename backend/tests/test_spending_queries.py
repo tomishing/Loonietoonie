@@ -110,6 +110,7 @@ def test_find_receipts(queries: SpendingQueries) -> None:
         "quantity": "1",
         "unit_price": "5.49",
         "category": "Groceries",
+        "subcategory": "",
     }
 
 
@@ -152,3 +153,26 @@ def test_context(queries: SpendingQueries) -> None:
 def test_invalid_inputs_are_rejected(values: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         BreakdownInput.model_validate(values)
+
+
+def test_breakdown_by_subcategory_and_filter() -> None:
+    receipts = [
+        receipt("2026-09-05", "Metro", [("Bread", "3.00", "Groceries"), ("Apples", "4.00", "Groceries")]),
+        receipt("2026-09-06", "Tim Hortons", [("Coffee", "2.00", "Dining Out")]),
+    ]
+    receipts[0].items[0].subcategory = "Bakery"
+    receipts[0].items[1].subcategory = "Produce"
+    queries = SpendingQueries(receipts, default_currency="CAD", today=TODAY)
+
+    grouped = breakdown(queries, group_by="subcategory")
+    assert grouped["rows"] == [
+        {"key": "Groceries › Produce", "total": "4.00", "receipts": 1},
+        {"key": "Groceries › Bakery", "total": "3.00", "receipts": 1},
+        {"key": "Dining Out › (none)", "total": "2.00", "receipts": 1},
+    ]
+    assert breakdown(queries, subcategory="bakery")["total"] == "3.00"
+    found = queries.find_receipts(
+        FindReceiptsInput(date_from=date(2026, 9, 1), date_to=date(2026, 9, 30), subcategory="Produce")
+    )
+    assert found["matching_receipts"] == 1
+    assert found["receipts"][0]["items"][1]["subcategory"] == "Produce"

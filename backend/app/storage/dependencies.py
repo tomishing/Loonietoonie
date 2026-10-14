@@ -8,8 +8,10 @@ from app.auth.session import SessionData
 from app.auth.tokens import get_credentials
 from app.config import Settings, get_settings
 from app.sheets.api import GoogleSheetsApi
-from app.storage.repository import Repository
-from app.storage.sheets_repository import SheetsRepository
+from app.sheets.schema import utc_now_iso
+from app.sheets.setup import migrate_once
+from app.storage.repository import Repository, StorageError
+from app.storage.sheets_repository import GOOGLE_ERRORS, SheetsRepository
 
 
 def get_repository(
@@ -22,4 +24,9 @@ def get_repository(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Google access expired. Please sign in again."
         ) from exc
-    return SheetsRepository(GoogleSheetsApi(credentials), user.spreadsheet_id)
+    api = GoogleSheetsApi(credentials)
+    try:
+        migrate_once(api, user.spreadsheet_id, utc_now_iso())
+    except GOOGLE_ERRORS as exc:
+        raise StorageError("Could not update the LoonieToonie spreadsheet") from exc
+    return SheetsRepository(api, user.spreadsheet_id)

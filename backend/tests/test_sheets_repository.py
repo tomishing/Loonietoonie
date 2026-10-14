@@ -8,10 +8,18 @@ from tests.fakes import FakeSheet, FakeSheetsApi
 
 
 def make_repo(
-    category_rows: list[list[str]], cache: TabReadCache | None = None
+    category_rows: list[list[str]],
+    cache: TabReadCache | None = None,
+    subcategory_rows: list[list[str]] | None = None,
 ) -> tuple[SheetsRepository, FakeSheetsApi]:
     api = FakeSheetsApi()
-    api.add_spreadsheet("sheet-1", [FakeSheet(0, "categories", rows=category_rows)])
+    api.add_spreadsheet(
+        "sheet-1",
+        [
+            FakeSheet(0, "categories", rows=category_rows),
+            FakeSheet(1, "subcategories", rows=subcategory_rows or []),
+        ],
+    )
     return SheetsRepository(api, "sheet-1", cache or TabReadCache()), api
 
 
@@ -50,7 +58,7 @@ def test_reads_are_cached() -> None:
     repo.list_categories()
     repo.list_categories()
 
-    assert api.calls.count("read_values") == 1
+    assert api.calls.count("read_values") == 2  # categories + subcategories, once each
 
 
 def test_cache_expires() -> None:
@@ -59,7 +67,31 @@ def test_cache_expires() -> None:
     repo.list_categories()
     repo.list_categories()
 
-    assert api.calls.count("read_values") == 2
+    assert api.calls.count("read_values") == 4
+
+
+def test_list_categories_attaches_subcategories() -> None:
+    repo, _ = make_repo(
+        [
+            ["name", "icon", "updated_at", "deleted"],
+            ["Groceries", "🛒", "", "FALSE"],
+            ["Pets", "🐾", "", "FALSE"],
+        ],
+        subcategory_rows=[
+            ["category", "name", "updated_at", "deleted"],
+            ["Groceries", "Produce", "", "FALSE"],
+            ["groceries ", " Bakery", "", "FALSE"],  # matched case-insensitively, trimmed
+            ["Groceries", "produce", "", "FALSE"],  # duplicate
+            ["Groceries", "Old", "", "TRUE"],  # deleted
+            ["Gadgets", "Phones", "", "FALSE"],  # unknown category
+            ["Groceries", "", "", "FALSE"],
+        ],
+    )
+
+    assert repo.list_categories() == [
+        Category(name="Groceries", icon="🛒", subcategories=["Produce", "Bakery"]),
+        Category(name="Pets", icon="🐾"),
+    ]
 
 
 def test_google_errors_become_storage_errors(monkeypatch: pytest.MonkeyPatch) -> None:

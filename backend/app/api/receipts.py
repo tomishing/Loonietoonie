@@ -32,8 +32,9 @@ def list_receipts(
     date_from: Annotated[date | None, Query(alias="from")] = None,
     date_to: Annotated[date | None, Query(alias="to")] = None,
     category: str | None = None,
+    subcategory: str | None = None,
 ) -> list[Receipt]:
-    filters = ReceiptFilter(date_from=date_from, date_to=date_to, category=category)
+    filters = ReceiptFilter(date_from=date_from, date_to=date_to, category=category, subcategory=subcategory)
     return service.list_receipts(repository, filters)
 
 

@@ -304,6 +304,7 @@ def test_summary_endpoint_returns_strings(client: TestClient) -> None:
         "previous_total": "0",
         "average_total": None,
         "share": "1.0000",
+        "subcategories": [],
     }
 
 
@@ -324,3 +325,45 @@ def test_summary_requires_sign_in() -> None:
     with TestClient(app) as client:
         assert client.get("/api/summary").status_code == 401
     app.dependency_overrides.clear()
+
+
+def with_subcategories(r: Receipt, *subcategories: str) -> Receipt:
+    for item, subcategory in zip(r.items, subcategories, strict=True):
+        item.subcategory = subcategory
+    return r
+
+
+def test_category_drill_down_by_subcategory() -> None:
+    receipts = [
+        # usual months (Jun–Aug): bakery 10 a month, produce 20 a month
+        *(
+            with_subcategories(
+                receipt(
+                    f"2026-0{m}-03", "Metro", [("Bread", "10", "Groceries"), ("Apples", "20", "Groceries")]
+                ),
+                "Bakery",
+                "Produce",
+            )
+            for m in (6, 7, 8)
+        ),
+        with_subcategories(
+            receipt(
+                "2026-09-04",
+                "Metro",
+                [("Bread", "25", "Groceries"), ("Apples", "5", "Groceries"), ("Gum", "2", "Groceries")],
+            ),
+            "Bakery",
+            "Produce",
+            "",
+        ),
+        receipt("2026-09-05", "Cineplex", [("Movie", "15", "Entertainment")]),
+    ]
+
+    categories = {c.category: c for c in run(receipts).categories}
+
+    assert [(s.subcategory, s.total, s.average_total) for s in categories["Groceries"].subcategories] == [
+        ("Bakery", D(25), D("10.00")),
+        ("Produce", D(5), D("20.00")),
+        ("", D(2), D("0.00")),  # items without a subcategory come last
+    ]
+    assert categories["Entertainment"].subcategories == []  # nothing subcategorized

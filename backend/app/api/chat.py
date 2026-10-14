@@ -53,7 +53,12 @@ def chat(
     queries = SpendingQueries(
         repository.list_receipts(ReceiptFilter()), settings.default_currency, date.today()
     )
-    categories = [category.name for category in repository.list_categories()]
+    # "Groceries: Fresh Fruit & Vegetables; Bakery; …" so the model knows the exact names to filter by.
+    # Semicolons, because a name may contain commas ("Rice, Grains & Cereal").
+    categories = [
+        f"{c.name}: {'; '.join(c.subcategories)}" if c.subcategories else c.name
+        for c in repository.list_categories()
+    ]
 
     def events() -> Iterator[str]:
         for event in runner.run(body.messages, queries, categories):

@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Literal
 
 from app.services.summary import NOT_ITEMIZED
-from app.storage.models import Receipt
+from app.storage.models import Receipt, ReceiptFilter
 
 ExportKind = Literal["items", "receipts"]
 
@@ -15,6 +15,7 @@ ITEM_COLUMNS = [
     "store",
     "item",
     "category",
+    "subcategory",
     "quantity",
     "unit_price",
     "amount",
@@ -38,13 +39,13 @@ def _money(value: Decimal) -> str:
     return format(value, "f")
 
 
-def export_csv(receipts: list[Receipt], kind: ExportKind, category: str | None = None) -> str:
+def export_csv(receipts: list[Receipt], kind: ExportKind, filters: ReceiptFilter | None = None) -> str:
     """Receipts newest first. Amounts are plain decimals; text columns are injection-safe.
 
-    With `category`, the items export keeps only that category's items (so the file is
-    "my Dining Out items"); the receipts export lists every receipt that has such an item.
+    With a category or subcategory filter, the items export keeps only matching items (so the
+    file is "my Dining Out items"); the receipts export lists every receipt that has such an item.
     """
-    only = category.strip().casefold() if category else None
+    only = filters if filters is not None and filters.filters_items else None
     buffer = io.StringIO()
     buffer.write(UTF8_BOM)
     writer = csv.writer(buffer, lineterminator="\r\n")
@@ -75,7 +76,7 @@ def export_csv(receipts: list[Receipt], kind: ExportKind, category: str | None =
         for item in receipt.items:
             amount = item.quantity * item.price
             itemized += amount
-            if only is not None and item.category.casefold() != only:
+            if only is not None and not only.matches_item(item):
                 continue
             writer.writerow(
                 [
@@ -83,6 +84,7 @@ def export_csv(receipts: list[Receipt], kind: ExportKind, category: str | None =
                     safe_text(receipt.store),
                     safe_text(item.name),
                     safe_text(item.category),
+                    safe_text(item.subcategory),
                     _money(item.quantity),
                     _money(item.price),
                     _money(amount),
@@ -98,6 +100,7 @@ def export_csv(receipts: list[Receipt], kind: ExportKind, category: str | None =
                     safe_text(receipt.store),
                     "",
                     NOT_ITEMIZED,
+                    "",
                     "1",
                     remainder,
                     remainder,

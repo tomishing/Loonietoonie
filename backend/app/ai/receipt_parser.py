@@ -14,6 +14,8 @@ import anthropic
 from anthropic.types import ContentBlockParam, ImageBlockParam, OutputConfigParam
 from pydantic import BaseModel, ValidationError
 
+from app.storage.models import Category
+
 logger = logging.getLogger(__name__)
 
 MAX_TOKENS = 16_000
@@ -55,6 +57,9 @@ item: Japanese 内税 lines such as "(内消費税等 ¥80)", European VAT summa
 and savings summaries that repeat discounts already listed.
 - name: the item name as printed, in its original language.
 - category: the best match from the allowed list, judged from the item name in any language.
+- subcategory: the best match among the subcategories listed for THAT category, or null if \
+the category has none or none clearly fits. Tax and fee lines use the Tax & Fees \
+subcategories (sales tax, deposits, bag fees, tips).
 
 total: the amount paid, including tax (TOTAL, Grand total, TOTAL À PAYER, 合計), not the \
 subtotal, the amount tendered, or the change.
@@ -70,6 +75,7 @@ class ParsedItem(BaseModel):
     quantity: str
     unit_price: str
     category: str
+    subcategory: str | None = None
 
 
 class ParsedReceipt(BaseModel):
@@ -97,7 +103,7 @@ class ReceiptParser(Protocol):
     def parse(
         self,
         ocr_text: str,
-        categories: list[str],
+        categories: list[Category],
         default_currency: str,
         today: date,
         image: ReceiptImage | None = None,
@@ -105,7 +111,11 @@ class ReceiptParser(Protocol):
 
 
 def output_schema(categories: list[str]) -> dict[str, Any]:
-    """JSON schema for Claude's answer. Categories are an enum of the user's own categories."""
+    """JSON schema for Claude's answer. Categories are an enum of the user's own categories.
+
+    Subcategories depend on the category, so they are a free string here and checked
+    against the user's list afterwards (app/services/scan.py).
+    """
     money = {"type": "string", "description": 'Plain decimal string, e.g. "4.99" or "-1.00"'}
     return {
         "type": "object",
@@ -125,8 +135,9 @@ def output_schema(categories: list[str]) -> dict[str, Any]:
                         "quantity": {"type": "string", "description": 'Units bought, e.g. "1" or "2"'},
                         "unit_price": money,
                         "category": {"type": "string", "enum": categories},
+                        "subcategory": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                     },
-                    "required": ["name", "quantity", "unit_price", "category"],
+                    "required": ["name", "quantity", "unit_price", "category", "subcategory"],
                     "additionalProperties": False,
                 },
             },
@@ -144,7 +155,7 @@ class ClaudeReceiptParser:
     def parse(
         self,
         ocr_text: str,
-        categories: list[str],
+        categories: list[Category],
         default_currency: str,
         today: date,
         image: ReceiptImage | None = None,
@@ -166,7 +177,7 @@ class ClaudeReceiptParser:
 
         output_config: OutputConfigParam = {
             "effort": "medium",
-            "format": {"type": "json_schema", "schema": output_schema(categories)},
+            "format": {"type": "json_schema", "schema": output_schema([c.name for c in categories])},
         }
         try:
             response = self._client.messages.create(
@@ -199,7 +210,7 @@ class ClaudeReceiptParser:
 
 
 def _user_prompt(
-    ocr_text: str, categories: list[str], default_currency: str, today: date, image: ReceiptImage | None
+    ocr_text: str, categories: list[Category], default_currency: str, today: date, image: ReceiptImage | None
 ) -> str:
     source = (
         "A photo of the receipt is attached; the OCR text below may be incomplete or wrong, "
@@ -207,9 +218,13 @@ def _user_prompt(
         if image is not None
         else "Here is the OCR text of the receipt."
     )
+    allowed = "\n".join(
+        f"- {c.name}: {'; '.join(c.subcategories)}" if c.subcategories else f"- {c.name} (no subcategories)"
+        for c in categories
+    )
     return (
         f"Today is {today.isoformat()}. The default currency is {default_currency}.\n"
-        f"Allowed categories: {', '.join(categories)}.\n\n"
+        f"Allowed categories, each with its subcategories (separated by semicolons):\n{allowed}\n\n"
         f"{source}\n\n<ocr_text>\n{ocr_text.strip() or '(no text recognized)'}\n</ocr_text>"
     )
 

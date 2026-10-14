@@ -23,6 +23,19 @@ Money = Annotated[Decimal, Field(allow_inf_nan=False), AfterValidator(_max_decim
 class Category(BaseModel):
     name: str
     icon: str
+    # Finer groups within the category, from the subcategories tab, in sheet order.
+    subcategories: list[str] = Field(default_factory=list)
+
+
+def _blank_to_none(value: str | None) -> str | None:
+    return value or None
+
+
+OptionalText = Annotated[
+    str | None,
+    StringConstraints(strip_whitespace=True, max_length=200),
+    AfterValidator(_blank_to_none),
+]
 
 
 class ItemDraft(BaseModel):
@@ -34,6 +47,8 @@ class ItemDraft(BaseModel):
     # Unit price. Negative prices are allowed for discount lines.
     price: Annotated[Money, Field(ge=-10_000_000, le=10_000_000)]
     category: Text
+    # Optional; must belong to `category` when given. Blank means none.
+    subcategory: OptionalText = None
 
 
 class ReceiptDraft(BaseModel):
@@ -58,6 +73,7 @@ class Item(BaseModel):
     quantity: Decimal
     price: Decimal
     category: str
+    subcategory: str = ""
 
 
 class Receipt(BaseModel):
@@ -76,3 +92,16 @@ class ReceiptFilter(BaseModel):
     date_from: date | None = None
     date_to: date | None = None
     category: str | None = None
+    subcategory: str | None = None
+
+    @property
+    def filters_items(self) -> bool:
+        return bool(self.category or self.subcategory)
+
+    def matches_item(self, item: Item) -> bool:
+        """Whether an item passes the category / subcategory filters (case-insensitive)."""
+        if self.category and item.category.casefold() != self.category.strip().casefold():
+            return False
+        if self.subcategory and item.subcategory.casefold() != self.subcategory.strip().casefold():
+            return False
+        return True

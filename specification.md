@@ -113,10 +113,12 @@ Sheets API quotas are about 60 reads + 60 writes per minute per user, so:
 1. Look for a non-trashed spreadsheet this app created, by the Drive app property `loonietoonie=spreadsheet`. `drive.file` only shows files the app created, and the marker means renaming or moving the file doesn't matter. If several exist, use the oldest.
 2. If none exists, find or create the Drive folder **LoonieToonie** (`loonietoonie=root-folder`) and create the **LoonieToonie** spreadsheet inside it.
 3. Migrate: add any missing tab, and append any missing column to the end of an existing tab's header row. Existing data, column order, and extra tabs or columns the user added are left alone. A new spreadsheet's empty starter tab ("Sheet1", or its localized name) becomes `receipts`. Header rows are frozen.
-4. When the `categories` tab is created, it is filled with the default categories (§4). An existing `categories` tab is never reseeded.
+4. When the `categories` tab is created, it is filled with the default categories (§4). An existing `categories` tab is never reseeded. Likewise, when the `subcategories` tab is created (new spreadsheets, and existing ones the first time they are migrated after the tab was added), it is filled with the default subcategories; an existing one is never reseeded.
 5. Data migration: categories the app relies on (currently **Tax & Fees**) are appended to an existing `categories` tab if no row with that name exists. A row the user soft-deleted counts as existing, so it is not re-added.
 
 First sign-in costs 2 Drive writes and 2 Sheets writes. Later sign-ins cost 3 reads and no writes when everything is already current.
+
+The migration also runs the first time each server process uses a spreadsheet (`migrate_once`, on the first API request), because sessions last for weeks: a schema change reaches existing users without asking them to sign in again.
 
 ### Scan flow
 
@@ -139,8 +141,9 @@ First sign-in costs 2 Drive writes and 2 Sheets writes. Later sign-ins cost 3 re
 | Tab | Columns |
 | --- | --- |
 | `receipts` | receipt_id, store, purchased_at, total, currency, image_link, created_at, updated_at, deleted |
-| `items` | item_id, receipt_id, name, quantity, price, category, updated_at, deleted |
+| `items` | item_id, receipt_id, name, quantity, price, category, subcategory, updated_at, deleted |
 | `categories` | name, icon, updated_at, deleted |
+| `subcategories` | category, name, updated_at, deleted |
 | `budgets` | month, category, amount, updated_at, deleted |
 | `settings` | key, value, updated_at |
 | `ocr_labels` | receipt_id, field, model_value, corrected_value (opt-in) |
@@ -172,6 +175,27 @@ Created with a new `categories` tab. Users can edit them later.
 
 **Tax & Fees** holds taxes and fees added on top of item prices (GST/HST/PST, TPS/TVQ, US sales tax, Japanese 外税, deposits, eco and bag fees, tips). The app relies on it, so it is added to existing spreadsheets on sign-in (§3).
 
+### Subcategories
+
+Optional finer groups within a category (Groceries › Bakery). One row per subcategory in the `subcategories` tab, linked to its category by name (case-insensitive). Users add, rename, or soft-delete them in the spreadsheet; rows for a category that doesn't exist are ignored. An item's `subcategory` is blank when it has none. Defaults (written when the tab is created):
+
+| Category | Subcategories |
+| --- | --- |
+| Groceries | Fresh Fruit & Vegetables; Meat & Seafood; Tofu & Plant Protein; Dairy & Eggs; Bakery; Pantry; Rice, Grains & Cereal; Frozen; Snacks & Sweets; Drinks |
+| Dining Out | Restaurants, Fast Food, Coffee & Cafés, Delivery, Bars |
+| Household | Cleaning, Paper Goods, Kitchen, Furniture & Decor, Tools & Hardware |
+| Transportation | Fuel, Public Transit, Taxi & Rideshare, Parking, Car Maintenance |
+| Utilities | Electricity, Gas & Heating, Water, Internet, Phone |
+| Housing | Rent & Mortgage, Repairs, Insurance |
+| Health | Pharmacy, Vitamins & Supplements, Medical & Dental, Vision |
+| Personal Care | Hair, Skin Care, Cosmetics, Hygiene |
+| Clothing | Clothes, Shoes, Accessories |
+| Entertainment | Movies & Shows, Games, Books & Music, Events, Subscriptions |
+| Kids | Toys, School Supplies, Baby Care, Activities |
+| Pets | Pet Food, Vet, Pet Supplies |
+| Tax & Fees | Sales Tax, Deposits & Eco Fees, Bag Fees, Tips & Service |
+| Other | (none) |
+
 ## 5. Receipt parsing and validation
 
 ### Saving a receipt (manual entry and confirmed scans)
@@ -183,6 +207,7 @@ Created with a new `categories` tab. Users can edit them later.
 - `total`: 0 or more. Money values allow at most 3 decimal places; no NaN or infinity.
 - `items`: 1–200 items. `price` is the **unit price**; the line amount is `price × quantity`. `quantity` is greater than 0 (default 1). A negative `price` is allowed for discount lines.
 - Each item's `category` must exist in the user's `categories` tab. It is matched case-insensitively and saved with the tab's spelling.
+- An item's `subcategory` is optional (blank or missing = none). When given, it must be one of that category's subcategories; it is matched case-insensitively and saved with the tab's spelling. On edit, an existing item may keep the subcategory it already has even if that name was renamed or removed in the sheet since (so renaming a subcategory never blocks editing old receipts).
 - On edit, an `item_id` must belong to that receipt and appear once. Items without `item_id` are added; existing items left out are soft-deleted.
 - The total is what the user enters; it is **not** required to equal the items' sum (tax, fees). The form pre-fills it with the items' sum and shows any difference.
 
@@ -190,7 +215,7 @@ Validation errors return 422 with FastAPI's `detail` list (`loc`, `msg`), which 
 
 ### Claude parsing (scan)
 
-Claude's answer (schema in `app/ai/receipt_parser.py`): `store`, `purchased_at` (`YYYY-MM-DD` or null), `currency` (ISO 4217 or null), `total`, and `items` of `name`, `quantity`, `unit_price`, `category`. Money values are decimal **strings**, converted to `Decimal` by the backend.
+Claude's answer (schema in `app/ai/receipt_parser.py`): `store`, `purchased_at` (`YYYY-MM-DD` or null), `currency` (ISO 4217 or null), `total`, and `items` of `name`, `quantity`, `unit_price`, `category`, `subcategory` (or null). Money values are decimal **strings**, converted to `Decimal` by the backend.
 
 How receipt lines map to items (in the prompt):
 
@@ -199,6 +224,7 @@ How receipt lines map to items (in the prompt):
 - **Taxes and fees added on top** of item prices are items in the **Tax & Fees** category (or Other if the user removed it). So category totals add up exactly to receipt totals.
 - **Tax already included** in prices (Japanese 内税, VAT summaries) is informational and is not an item.
 - `total` is the amount paid including tax; subtotals, tendered cash, change, and card lines are ignored.
+- The prompt lists each category with its subcategories. Claude picks a subcategory of the item's category, or null when none fits. The schema can't tie subcategories to categories, so the backend drops any subcategory that isn't in the final category's list.
 - "$" means the default currency (CAD) unless the receipt shows US dollars. Japanese era years: 令和N年 = 2018 + N.
 
 The backend normalizes the answer (amount formats like `4,99`, `¥1,080`, `100-`; unknown categories fall back to Other) and checks:
@@ -225,19 +251,19 @@ Tests: `tests/samples/` holds OCR texts in English (Ontario, HST), French (Québ
 | GET | `/api/health` | Health check (phase 1) |
 | GET | `/api/auth/google`, `/api/auth/callback` | Google Sign-In (§3) |
 | GET | `/api/auth/me` | Signed-in user (email, name, picture, `spreadsheet_url`); 401 if not signed in |
-| GET | `/api/categories` | Active categories (`name`, `icon`) from the user's `categories` tab |
+| GET | `/api/categories` | Active categories (`name`, `icon`, `subcategories`) from the `categories` and `subcategories` tabs |
 | POST | `/api/auth/logout` | Clear the session cookie |
 | POST | `/api/receipts/scan` | `{ocr_text, image?, image_media_type?}` → Claude → `{draft, issues, needs_image, used_image}`. Nothing is saved (§3, §5) |
 | PUT | `/api/receipts/{id}/image` | Body: the photo bytes (`image/jpeg`, `png`, or `webp`, ≤ 5 MB). Saves it to Drive and sets `image_link` |
 | POST | `/api/receipts` | Save a receipt + items (§5); returns 201 with the saved receipt |
-| GET | `/api/receipts` | Active receipts with their items, newest purchase first. Filters: `from`, `to` (`YYYY-MM-DD`, inclusive), `category` (receipts with at least one item in it) |
+| GET | `/api/receipts` | Active receipts with their items, newest purchase first. Filters: `from`, `to` (`YYYY-MM-DD`, inclusive), `category`, `subcategory` (receipts with at least one matching item) |
 | GET | `/api/receipts/{id}` | One receipt with its items; 404 if missing or deleted |
 | PUT | `/api/receipts/{id}` | Replace a receipt's fields and items (§5) |
 | DELETE | `/api/receipts/{id}` | Soft-delete the receipt and its items; 204 |
 | GET | `/api/summary?month=YYYY-MM&currency=CAD` | Spending patterns for one month and one currency (§7 Dashboard). Defaults: this month, `DEFAULT_CURRENCY` |
 | GET / PUT | `/api/budgets` | Later (savings step, phase 10): monthly budgets per category |
 | POST | `/api/chat` | Spending chatbot. Body: `{messages: [{role, content}]}` (text only, last one from the user, ≤ 40 messages, ≤ 4000 chars each). Streams newline-delimited JSON events (`text`, `status`, `reset`, `error`, `done`) (§7 Chat) |
-| GET | `/api/export/csv` | CSV download (§7 Export). `kind=items` (default) or `receipts`; filters `from`, `to`, `category`, `currency` |
+| GET | `/api/export/csv` | CSV download (§7 Export). `kind=items` (default) or `receipts`; filters `from`, `to`, `category`, `subcategory`, `currency` |
 
 Request and response bodies are Pydantic models. Money values (`total`, `price`, `quantity`) are JSON **strings** in responses (e.g. `"3.49"`); requests accept strings or numbers. Storage problems return 502; an expired Google grant returns 401.
 
@@ -248,7 +274,7 @@ Receipt response:
   "receipt_id": "uuid", "store": "FreshMart", "purchased_at": "2026-10-01",
   "total": "7.47", "currency": "CAD", "image_link": "",
   "created_at": "2026-10-13T09:30:00Z", "updated_at": "2026-10-13T09:30:00Z",
-  "items": [{"item_id": "uuid", "name": "Milk", "quantity": "1", "price": "3.49", "category": "Groceries"}]
+  "items": [{"item_id": "uuid", "name": "Milk", "quantity": "1", "price": "3.49", "category": "Groceries", "subcategory": "Dairy & Eggs"}]
 }
 ```
 
@@ -273,9 +299,11 @@ Updates and deletes always re-read the tabs, so row numbers are correct even if 
   - `/` **Patterns** (the home page): the dashboard (see below), with a greeting. `/dashboard` redirects here.
   - `/account`: profile, spreadsheet link, enter-by-hand link, categories, Sign out.
   - `/scan`: take or choose a photo; scanning starts at once on a "Scanning your receipt…" screen (on-device OCR, then the text, and the photo once if needed), then the review screen opens.
-  - `/transactions`: **all** receipts by default (each card collapsed to store, date, item count and total; tap to see the items, Edit and Photo), newest purchase date first, grouped under month headings with each month's total (per currency). Optional filters as chips (All, This month, a month picker, category), kept in the URL. After saving, the list opens unfiltered and scrolls to and highlights the saved receipt, so receipts dated in other months are never hidden.
-  - `/receipts/new` and `/receipts/:id/edit`: the receipt form (store, date, currency, items with quantity, unit price and category, total). The total follows the items' sum until the user edits it. Edit also offers Delete. The currency defaults to `DEFAULT_CURRENCY` (from `/api/auth/me`).
+  - `/transactions`: **all** receipts by default (each card collapsed to store, date, item count and total; tap to see the items, Edit and Photo), newest purchase date first, grouped under month headings with each month's total (per currency). Optional filters as chips (All, This month, a month picker, category, subcategory), kept in the URL. After saving, the list opens unfiltered and scrolls to and highlights the saved receipt, so receipts dated in other months are never hidden.
+  - `/receipts/new` and `/receipts/:id/edit`: the receipt form (store, date, currency, items with quantity, unit price, category and an optional subcategory picked from that category's list, total). The total follows the items' sum until the user edits it. Edit also offers Delete. The currency defaults to `DEFAULT_CURRENCY` (from `/api/auth/me`).
   - Review screen: `/receipts/new` with a scan result in router state. It is pre-filled from the draft, lists the issues, shows the photo, keeps the scanned total as read, and uploads the photo after saving.
+  - Item rows show the subcategory (or the category when there is none). Choosing a category adds a subcategory filter chip when that category has subcategories (`subcategory` in the URL).
+  - The Account page lists each category with its subcategories and says they are edited in the spreadsheet.
   - Transactions show a Photo link for receipts with a photo, and "Items CSV" / "Receipts CSV" buttons for the current filters.
 - Money in the frontend is handled as decimal strings and bigint math (`src/lib/decimal.ts`), never JS floats.
 
@@ -283,7 +311,7 @@ Updates and deletes always re-read the tabs, so row numbers are correct even if 
 
 `GET /api/export/csv` downloads the user's receipts for Excel, Numbers, or Google Sheets. Filename: `loonietoonie-<kind>-<today>.csv`.
 
-- `kind=items` (default): one row per item: `date, store, item, category, quantity, unit_price, amount (= quantity × unit_price), currency, receipt_total, receipt_id`. When a receipt's total differs from its items, a `(not itemized)` row keeps `amount` adding up to the receipt totals. With a `category` filter, only that category's items are included (and no `(not itemized)` rows).
+- `kind=items` (default): one row per item: `date, store, item, category, subcategory, quantity, unit_price, amount (= quantity × unit_price), currency, receipt_total, receipt_id`. When a receipt's total differs from its items, a `(not itemized)` row keeps `amount` adding up to the receipt totals. With a `category` or `subcategory` filter, only matching items are included (and no `(not itemized)` rows).
 - `kind=receipts`: one row per receipt: `date, store, total, currency, items (count), categories, photo (Drive link), receipt_id`. A `category` filter keeps receipts that have at least one item in it.
 - Newest first; deleted rows are never exported. All currencies unless `currency` is given (each row says its currency; nothing is converted).
 - UTF-8 **with a byte-order mark**, so Excel shows Japanese and French text correctly; `\r\n` line endings; ISO dates; amounts as plain decimals (`-1.00` for discounts).
@@ -295,8 +323,8 @@ Purpose: answer questions about actual spending ("What did I spend most on this 
 
 - **Model:** `ANTHROPIC_CHAT_MODEL` (default `claude-opus-5-5`, effort `medium`). `claude-haiku-5-5` is a much cheaper option. Refusal fallbacks are on: `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) re-runs a safety-declined request on Anthropic's recommended model; the frontend drops any partial text on a `reset` event.
 - **Numbers come from tools, not from the model's arithmetic.** Three read-only tools run pandas over the user's receipts (`app/services/spending_queries.py`), and their inputs are validated with Pydantic before running:
-  - `spending_breakdown`: total and rows for a date range, grouped by category, store, month, item, or weekday; optional category, store, and item filters
-  - `find_receipts`: matching receipts with their items (newest first, up to 30) plus the count and total of all matches
+  - `spending_breakdown`: total and rows for a date range, grouped by category, subcategory (rows `Category › Subcategory`), store, month, item, or weekday; optional category, subcategory, store, and item filters
+  - `find_receipts`: matching receipts with their items and subcategories (newest first, up to 30) plus the count and total of all matches; same filters
   - `month_overview`: the dashboard numbers for one month (same code as `/api/summary`)
 - **Prompt:** a stable system prompt (cached) plus per-user facts after the cache breakpoint: today, default currency, receipt counts per currency, first/last receipt date, and category names. Rules in the prompt:
   - one currency at a time
@@ -326,6 +354,7 @@ Purpose: see actual spending patterns. Computed on the backend with pandas (`app
   3. *By category*:
      - one horizontal bar per category, all in the same color (a single series), with a tick for the usual month
      - each row shows the amount and the change vs usual; categories that dropped to zero stay listed
+     - **drill-down:** a category whose items have subcategories opens (tap) into its subcategory bars for the month, with their own usual-month ticks, on the category's own scale; items without a subcategory show last as "No subcategory"
      - hover or keyboard focus shows this month, last month, and the usual month
   4. *Last 12 months*:
      - stacked columns of the top 5 categories (by 12-month spending), with smaller categories folded into a gray "Other categories" (`(other categories)` in the API, never equal to a real category name)

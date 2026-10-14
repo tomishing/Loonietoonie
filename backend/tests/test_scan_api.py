@@ -87,6 +87,7 @@ def test_scan_returns_draft_with_strings_and_default_currency(client: TestClient
         "quantity": "1",
         "price": "0.65",
         "category": "Tax & Fees",
+        "subcategory": None,
     }
     assert [i["code"] for i in body["issues"]] == ["currency_defaulted"]
     assert body["needs_image"] is False

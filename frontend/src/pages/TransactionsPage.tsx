@@ -42,22 +42,37 @@ export function TransactionsPage() {
   // No month in the URL means all receipts, newest first.
   const month = searchParams.get('month') ?? ''
   const category = searchParams.get('category') ?? ''
+  const subcategory = searchParams.get('subcategory') ?? ''
   const categories = useCategories()
   const location = useLocation()
   const { highlight, notice } = (location.state as TransactionsLocationState | null) ?? {}
 
   // The result remembers which filters it belongs to; a different filter means "loading".
-  const queryKey = `${month}|${category}`
+  const queryKey = `${month}|${category}|${subcategory}`
   const [result, setResult] = useState<{ key: string; result: Result } | null>(null)
   const state: LoadState = result?.key === queryKey ? result.result : { status: 'loading' }
 
   const range = month ? monthRange(month) : null
-  const filters = { from: range?.from, to: range?.to, category: category || undefined }
+  const filters = {
+    from: range?.from,
+    to: range?.to,
+    category: category || undefined,
+    subcategory: subcategory || undefined,
+  }
+  const subcategoryOptions =
+    categories.status === 'loaded' && category
+      ? (categories.categories.find((c) => c.name === category)?.subcategories ?? [])
+      : []
 
   useEffect(() => {
     let active = true
     const range = month ? monthRange(month) : null
-    listReceipts({ from: range?.from, to: range?.to, category: category || undefined })
+    listReceipts({
+      from: range?.from,
+      to: range?.to,
+      category: category || undefined,
+      subcategory: subcategory || undefined,
+    })
       .then((receipts) => {
         if (active) setResult({ key: queryKey, result: { status: 'loaded', receipts } })
       })
@@ -67,7 +82,7 @@ export function TransactionsPage() {
     return () => {
       active = false
     }
-  }, [month, category, queryKey])
+  }, [month, category, subcategory, queryKey])
 
   // The app's WebView can't download with the session token, so it fetches and shares the file instead.
   const shareOnApp = (event: MouseEvent, kind: 'items' | 'receipts') => {
@@ -80,6 +95,8 @@ export function TransactionsPage() {
     const next = new URLSearchParams(searchParams)
     if (value) next.set(key, value)
     else next.delete(key)
+    // Subcategories belong to one category.
+    if (key === 'category') next.delete('subcategory')
     setSearchParams(next, { replace: true })
   }
 
@@ -143,6 +160,19 @@ export function TransactionsPage() {
               ))}
           </select>
         </label>
+        {subcategoryOptions.length > 0 && (
+          <label className={`chip-select${subcategory ? ' chip-on' : ''}`}>
+            <span className="sr-only">Subcategory</span>
+            <select value={subcategory} onChange={(event) => setFilter('subcategory', event.target.value)}>
+              <option value="">All of {category}</option>
+              {subcategoryOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       {state.status === 'loading' && (
@@ -163,7 +193,7 @@ export function TransactionsPage() {
       {state.status === 'loaded' && state.receipts.length === 0 && (
         <div className="card empty">
           <img src="/favicon.svg" alt="" width={64} height={64} />
-          <p>{month || category ? 'No receipts match these filters.' : 'No receipts yet.'}</p>
+          <p>{month || category || subcategory ? 'No receipts match these filters.' : 'No receipts yet.'}</p>
           <Link to="/scan" className="button button-primary">
             <Icon name="camera" size={20} />
             Scan a receipt
@@ -272,7 +302,9 @@ function ReceiptCard({
                   <span aria-hidden="true">{categoryIcon(categories, item.category)}</span> {item.name}
                   {item.quantity !== '1' && <span className="muted"> × {item.quantity}</span>}
                 </span>
-                <span className="chip chip-small">{item.category}</span>
+                <span className="chip chip-small" title={item.subcategory ? `${item.category} › ${item.subcategory}` : undefined}>
+                  {item.subcategory || item.category}
+                </span>
                 <span className="item-price">
                   {line === null ? item.price : formatMoney(formatDecimal(line), receipt.currency)}
                 </span>

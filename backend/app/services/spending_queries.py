@@ -12,13 +12,14 @@ import pandas as pd
 from pydantic import BaseModel, Field, model_validator
 
 from app.services.summary import build_frames, summarize
-from app.storage.models import Receipt
+from app.storage.models import Receipt, ReceiptFilter
 
 MAX_ROWS = 50
 MAX_RECEIPTS = 30
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-GroupBy = Literal["category", "store", "month", "item", "weekday"]
+GroupBy = Literal["category", "subcategory", "store", "month", "item", "weekday"]
+SUBCATEGORY_SEPARATOR = " › "
 
 
 class _Range(BaseModel):
@@ -36,6 +37,7 @@ class _Range(BaseModel):
 class BreakdownInput(_Range):
     group_by: GroupBy
     category: str | None = None
+    subcategory: str | None = None
     store: str | None = None
     item_contains: str | None = None
     limit: int | None = Field(default=None, ge=1, le=MAX_ROWS)
@@ -43,6 +45,7 @@ class BreakdownInput(_Range):
 
 class FindReceiptsInput(_Range):
     category: str | None = None
+    subcategory: str | None = None
     store: str | None = None
     item_contains: str | None = None
     limit: int | None = Field(default=None, ge=1, le=MAX_RECEIPTS)
@@ -83,6 +86,8 @@ class SpendingQueries:
         currency, lines = self._lines(query)
         if query.category:
             lines = lines[lines["category"].str.casefold() == query.category.strip().casefold()]
+        if query.subcategory:
+            lines = lines[lines["subcategory"].str.casefold() == query.subcategory.strip().casefold()]
         if query.store:
             lines = lines[_contains(lines["store"], query.store)]
         if query.item_contains:
@@ -94,6 +99,11 @@ class SpendingQueries:
         keys: pd.Series[Any]
         if query.group_by == "category":
             keys = lines["category"]
+        elif query.group_by == "subcategory":
+            # Same subcategory names can exist under different categories, so keep both.
+            keys = lines["category"] + lines["subcategory"].map(
+                lambda sub: SUBCATEGORY_SEPARATOR + sub if sub else SUBCATEGORY_SEPARATOR + "(none)"
+            )
         elif query.group_by == "store":
             keys = lines["store"]
         elif query.group_by == "month":
@@ -139,9 +149,8 @@ class SpendingQueries:
                 continue
             if query.store and query.store.strip().casefold() not in receipt.store.casefold():
                 continue
-            if query.category and not any(
-                i.category.casefold() == query.category.strip().casefold() for i in receipt.items
-            ):
+            item_filter = ReceiptFilter(category=query.category, subcategory=query.subcategory)
+            if item_filter.filters_items and not any(item_filter.matches_item(i) for i in receipt.items):
                 continue
             if query.item_contains and not any(
                 query.item_contains.strip().casefold() in i.name.casefold() for i in receipt.items
@@ -165,6 +174,7 @@ class SpendingQueries:
                             "quantity": _money(i.quantity),
                             "unit_price": _money(i.price),
                             "category": i.category,
+                            "subcategory": i.subcategory,
                         }
                         for i in r.items
                     ],
