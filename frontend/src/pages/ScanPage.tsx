@@ -17,6 +17,10 @@ type Step =
   | { name: 'scanning'; stage: string; progress: number | null }
   | { name: 'error'; messages: string[] }
 
+// "Take photo" is offered in the Android app (document scanner). The website only picks a photo
+// from the gallery or files.
+const canTakePhoto = hasDocumentScanner
+
 // Rough share of the progress bar for each stage (OCR reports its own progress inside the first part).
 const READING_SHARE = 0.5
 
@@ -201,12 +205,20 @@ export function ScanPage() {
         {photos ? (
           <img className="scan-preview" src={photos.combined.previewUrl} alt="Receipt photo" />
         ) : (
-          <button type="button" className="scan-placeholder" onClick={() => void takePhoto()}>
+          <button
+            type="button"
+            className="scan-placeholder"
+            onClick={() => (canTakePhoto ? void takePhoto() : galleryRef.current?.click())}
+          >
             <span className="scan-placeholder-icon">
-              <Icon name="camera" size={40} />
+              <Icon name={canTakePhoto ? 'camera' : 'image'} size={40} />
             </span>
-            <strong>Take a photo of a receipt</strong>
-            <span className="muted">Lay it flat, in good light, with all four corners showing.</span>
+            <strong>{canTakePhoto ? 'Take a photo of a receipt' : 'Choose a photo of a receipt'}</strong>
+            <span className="muted">
+              {canTakePhoto
+                ? 'Lay it flat, in good light, with all four corners showing.'
+                : 'A clear, straight photo with all four corners showing reads best.'}
+            </span>
           </button>
         )}
         {inputs}
@@ -224,17 +236,19 @@ export function ScanPage() {
               Try again
             </button>
           )}
+          {canTakePhoto && (
+            <button
+              type="button"
+              className={`button button-block ${photos ? 'button-secondary' : 'button-primary'}`}
+              onClick={() => void takePhoto()}
+            >
+              <Icon name="camera" size={20} />
+              {photos ? 'Retake' : 'Take photo'}
+            </button>
+          )}
           <button
             type="button"
-            className={`button button-block ${photos ? 'button-secondary' : 'button-primary'}`}
-            onClick={() => void takePhoto()}
-          >
-            <Icon name="camera" size={20} />
-            {photos ? 'Retake' : 'Take photo'}
-          </button>
-          <button
-            type="button"
-            className="button button-secondary button-block"
+            className={`button button-block ${canTakePhoto || photos ? 'button-secondary' : 'button-primary'}`}
             onClick={() => galleryRef.current?.click()}
           >
             <Icon name="image" size={20} />
