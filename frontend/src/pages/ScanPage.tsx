@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { errorMessages, scanReceipt, type ScanResult } from '../api/client'
+import { hasDocumentScanner, scanDocument, ScannerUnavailableError } from '../capture/documentScanner'
 import { Icon } from '../components/Icon'
 import { prepareImage, toBase64, type PreparedImage } from '../lib/image'
 import { recognizeReceipt } from '../ocr'
@@ -30,6 +31,7 @@ export function ScanPage() {
   const galleryRef = useRef<HTMLInputElement>(null)
   // Incremented on cancel or a new photo, so a scan that is still running is ignored when it finishes.
   const runRef = useRef(0)
+  const scannerUnavailable = useRef(false)
 
   useEffect(() => () => (image ? URL.revokeObjectURL(image.previewUrl) : undefined), [image])
   useEffect(() => () => (rawPreview ? URL.revokeObjectURL(rawPreview) : undefined), [rawPreview])
@@ -62,10 +64,13 @@ export function ScanPage() {
   }
 
   // A new photo goes straight to the scanning screen; there is no separate "Read receipt" step.
-  const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
+  const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
-    if (!file) return
+    if (file) void handlePhoto(file)
+  }
+
+  const handlePhoto = async (file: Blob) => {
     const run = ++runRef.current
     setRawPreview(URL.createObjectURL(file))
     setStep({ name: 'scanning', stage: 'Preparing the photo', progress: 0 })
@@ -77,6 +82,26 @@ export function ScanPage() {
     } catch {
       if (run === runRef.current) {
         setStep({ name: 'error', messages: ["Couldn't open that photo. Try a JPEG or PNG image."] })
+      }
+    }
+  }
+
+  // Android app: Google's document scanner (crops and straightens the receipt). Web, or a phone
+  // without the scanner: the camera through a file input.
+  const takePhoto = async () => {
+    if (!hasDocumentScanner || scannerUnavailable.current) {
+      cameraRef.current?.click()
+      return
+    }
+    try {
+      const photo = await scanDocument()
+      if (photo) void handlePhoto(photo)
+    } catch (error) {
+      if (error instanceof ScannerUnavailableError) {
+        scannerUnavailable.current = true
+        cameraRef.current?.click()
+      } else {
+        setStep({ name: 'error', messages: ["Couldn't open the scanner. Try again, or choose a photo from the gallery."] })
       }
     }
   }
@@ -148,7 +173,7 @@ export function ScanPage() {
         {image ? (
           <img className="scan-preview" src={image.previewUrl} alt="Receipt photo" />
         ) : (
-          <button type="button" className="scan-placeholder" onClick={() => cameraRef.current?.click()}>
+          <button type="button" className="scan-placeholder" onClick={() => void takePhoto()}>
             <span className="scan-placeholder-icon">
               <Icon name="camera" size={40} />
             </span>
@@ -174,7 +199,7 @@ export function ScanPage() {
           <button
             type="button"
             className={`button button-block ${image ? 'button-secondary' : 'button-primary'}`}
-            onClick={() => cameraRef.current?.click()}
+            onClick={() => void takePhoto()}
           >
             <Icon name="camera" size={20} />
             {image ? 'Retake' : 'Take photo'}

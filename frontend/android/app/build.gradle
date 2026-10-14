@@ -39,6 +39,8 @@ dependencies {
     // On-device receipt OCR (bundled models, work offline): Latin scripts and Japanese.
     implementation "com.google.mlkit:text-recognition:$mlkitTextRecognitionVersion"
     implementation "com.google.mlkit:text-recognition-japanese:$mlkitTextRecognitionVersion"
+    // Receipt capture: edge detection, crop, and cleanup (UI and model come from Google Play services).
+    implementation "com.google.android.gms:play-services-mlkit-document-scanner:$mlkitDocumentScannerVersion"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
