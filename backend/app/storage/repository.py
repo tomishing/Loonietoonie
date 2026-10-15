@@ -81,3 +81,11 @@ class Repository(Protocol):
     def list_bank_transactions(self, filters: BankTransactionFilter) -> list[BankTransaction]:
         """Active transactions, newest first."""
         ...
+
+    def set_bank_receipt_ids(self, updates: dict[str, str]) -> None:
+        """Set receipt_id on transactions {transaction_id: receipt_id} (receipt matching)."""
+        ...
+
+    def remove_bank_transactions(self, account_ids: list[str]) -> int:
+        """Soft-delete all transactions of these accounts (unlink with "remove transactions")."""
+        ...

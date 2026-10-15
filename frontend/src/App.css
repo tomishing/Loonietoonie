@@ -1185,7 +1185,64 @@ details[open] > summary .category-entry-chevron {
 
 .bank-row .receipt-head {
   grid-template-columns: auto 1fr auto;
-  cursor: default;
+}
+
+.receipt-match,
+.bank-row details > .receipt-match-status {
+  margin: 0 14px;
+  padding: 10px 0 14px;
+  border-top: 1px solid var(--border);
+}
+
+.receipt-match .receipt-actions {
+  padding: 8px 0 0;
+}
+
+.receipt-match-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.match-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.match-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.match-option:hover {
+  border-color: var(--accent);
+}
+
+.match-option > span:first-child {
+  display: flex;
+  flex-direction: column;
+}
+
+.match-option .badge {
+  margin-left: 6px;
 }
 
 .bank-row-right {

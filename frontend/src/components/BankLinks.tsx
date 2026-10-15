@@ -124,14 +124,21 @@ export function BankLinks() {
   const unlink = async (itemId: string, institution: string) => {
     if (
       !window.confirm(
-        `Unlink ${institution || 'this bank'}? LoonieToonie stops importing from it. Transactions already imported stay in your spreadsheet.`,
+        `Unlink ${institution || 'this bank'}? LoonieToonie stops importing from it.`,
       )
     )
       return
+    // A second question: test (Sandbox) or unwanted data can be removed with the link.
+    const removeTransactions = window.confirm(
+      `Also remove the transactions imported from ${institution || 'this bank'}?\n\nOK: remove them from your spending and spreadsheet (marked deleted).\nCancel: keep them.`,
+    )
     setBusy('Unlinking…')
     try {
-      await unlinkBank(itemId)
-      setNotice({ tone: 'ok', text: `${institution || 'The bank'} was unlinked.` })
+      await unlinkBank(itemId, removeTransactions)
+      setNotice({
+        tone: 'ok',
+        text: `${institution || 'The bank'} was unlinked${removeTransactions ? ' and its transactions removed' : ''}.`,
+      })
     } catch (error) {
       setNotice({ tone: 'error', text: errorMessages(error).join(' ') })
     } finally {

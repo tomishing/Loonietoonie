@@ -102,6 +102,8 @@ export function DashboardPage() {
             {summary.period.partial && ` · day 1–${Number(summary.period.end.slice(8))}, compared with the same days of earlier months`}
             {' · '}
             {summary.currency}
+            {summary.bank_transaction_count > 0 &&
+              ` · includes ${summary.bank_transaction_count} card & bank charge${summary.bank_transaction_count === 1 ? '' : 's'} without a receipt`}
           </p>
           {summary.receipt_count === 0 && summary.average_total === null ? (
             <div className="card empty">

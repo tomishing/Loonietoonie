@@ -1,9 +1,13 @@
 """Receipt rules that need the user's data: categories must exist, item IDs must belong to the receipt."""
 
+import logging
 from datetime import date, timedelta
 
+from app.services.matching import refresh_matches
 from app.storage.models import Receipt, ReceiptDraft, ReceiptFilter
-from app.storage.repository import Repository
+from app.storage.repository import Repository, StorageError
+
+logger = logging.getLogger(__name__)
 
 # Allows for time zones ahead of the server.
 MAX_DAYS_IN_FUTURE = 1
@@ -89,8 +93,19 @@ def get_receipt(repository: Repository, receipt_id: str) -> Receipt:
     return receipt
 
 
+def _rematch(repository: Repository) -> None:
+    """A saved, changed, or deleted receipt can match (or stop matching) a card charge. Best effort:
+    the receipt is already saved, and the next bank sync retries."""
+    try:
+        refresh_matches(repository)
+    except StorageError:
+        logger.warning("Receipt matching failed; it will be retried on the next sync", exc_info=True)
+
+
 def create_receipt(repository: Repository, draft: ReceiptDraft) -> Receipt:
-    return repository.create_receipt(_validate(repository, draft, existing=None))
+    receipt = repository.create_receipt(_validate(repository, draft, existing=None))
+    _rematch(repository)
+    return receipt
 
 
 def update_receipt(repository: Repository, receipt_id: str, draft: ReceiptDraft) -> Receipt:
@@ -98,6 +113,7 @@ def update_receipt(repository: Repository, receipt_id: str, draft: ReceiptDraft)
     updated = repository.update_receipt(receipt_id, _validate(repository, draft, existing))
     if updated is None:
         raise ReceiptNotFoundError(receipt_id)
+    _rematch(repository)
     return updated
 
 
@@ -111,3 +127,4 @@ def attach_image(repository: Repository, receipt_id: str, data: bytes, media_typ
 def delete_receipt(repository: Repository, receipt_id: str) -> None:
     if not repository.delete_receipt(receipt_id):
         raise ReceiptNotFoundError(receipt_id)
+    _rematch(repository)

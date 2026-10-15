@@ -5,6 +5,7 @@ import { categoryIcon, type CategoriesState } from '../hooks/useCategories'
 import { formatDecimal, parseDecimal } from '../lib/decimal'
 import { formatDate, formatMoney, formatMonth, monthRange } from '../lib/format'
 import { Icon } from './Icon'
+import { ReceiptMatch } from './ReceiptMatch'
 
 type State = { status: 'loading' } | { status: 'loaded'; transactions: BankTransaction[] } | { status: 'error'; messages: string[] }
 
@@ -41,6 +42,9 @@ export function BankTransactionList({
   accounts: BankAccount[]
   categories: CategoriesState
 }) {
+  // Bumped after a match changes, to reload the list.
+  const [version, setVersion] = useState(0)
+  const reload = () => setVersion((v) => v + 1)
   // The result remembers which filters it belongs to; different filters mean "loading".
   const key = `${month}|${category}`
   const [result, setResult] = useState<{ key: string; state: State } | null>(null)
@@ -72,7 +76,7 @@ export function BankTransactionList({
     return () => {
       active = false
     }
-  }, [month, category, key])
+  }, [month, category, key, version]) // a reload after a match change keeps the list on screen
 
   const accountLabel = (id: string) => {
     const account = accounts.find((a) => a.account_id === id)
@@ -138,35 +142,50 @@ export function BankTransactionList({
                   // Money in (refund, payment received) shows as +amount; spending as the plain amount.
                   const refund = value < 0n
                   return (
-                    <li key={t.transaction_id} className={`receipt-card bank-row${t.kind !== 'spending' ? ' bank-row-other' : ''}`}>
-                      <div className="receipt-head">
-                        <span className="receipt-avatar" aria-hidden="true">
-                          {t.kind === 'spending' ? categoryIcon(categories, t.category) : t.kind === 'income' ? '💰' : '🔁'}
-                        </span>
-                        <span className="receipt-info">
-                          <span className="receipt-store">
-                            {t.merchant || t.description}
-                            {t.pending && <span className="badge badge-muted">Pending</span>}
+                    <li
+                      key={t.transaction_id}
+                      className={`receipt-card bank-row${t.kind !== 'spending' ? ' bank-row-other' : ''}`}
+                    >
+                      <details>
+                        <summary className="receipt-head">
+                          <span className="receipt-avatar" aria-hidden="true">
+                            {t.kind === 'spending' ? categoryIcon(categories, t.category) : t.kind === 'income' ? '💰' : '🔁'}
                           </span>
-                          <span className="muted">
-                            {formatDate(t.date)}
-                            {accountLabel(t.account_id) && ` · ${accountLabel(t.account_id)}`}
+                          <span className="receipt-info">
+                            <span className="receipt-store">
+                              {t.merchant || t.description}
+                              {t.pending && <span className="badge badge-muted">Pending</span>}
+                              {t.receipt_id && t.receipt_id !== 'none' && <span className="badge badge-muted">🧾 Receipt</span>}
+                            </span>
+                            <span className="muted">
+                              {formatDate(t.date)}
+                              {accountLabel(t.account_id) && ` · ${accountLabel(t.account_id)}`}
+                            </span>
                           </span>
-                        </span>
-                        <span className="bank-row-right">
-                          <strong className="receipt-amount">
-                            {refund ? '+' : ''}
-                            {formatMoney(formatDecimal(refund ? -value : value), t.currency)}
-                          </strong>
-                          <span className="chip chip-small">
-                            {t.kind === 'transfer'
-                              ? 'Transfer'
-                              : t.kind === 'income'
-                                ? 'Income'
-                                : t.subcategory || t.category || 'Uncategorized'}
+                          <span className="bank-row-right">
+                            <strong className="receipt-amount">
+                              {refund ? '+' : ''}
+                              {formatMoney(formatDecimal(refund ? -value : value), t.currency)}
+                            </strong>
+                            <span className="chip chip-small">
+                              {t.kind === 'transfer'
+                                ? 'Transfer'
+                                : t.kind === 'income'
+                                  ? 'Income'
+                                  : t.subcategory || t.category || 'Uncategorized'}
+                            </span>
                           </span>
-                        </span>
-                      </div>
+                        </summary>
+                        {t.kind === 'spending' && !refund ? (
+                          <ReceiptMatch transaction={t} onChanged={reload} />
+                        ) : (
+                          <p className="receipt-match-status muted">
+                            {t.kind === 'spending'
+                              ? 'A refund: it lowers spending in its category.'
+                              : 'Not spending: transfers, card payments, and income are left out of your spending.'}
+                          </p>
+                        )}
+                      </details>
                     </li>
                   )
                 })}

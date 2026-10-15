@@ -4,6 +4,7 @@ import {
   errorMessages,
   exportCsvUrl,
   getBankStatus,
+  listBankTransactions,
   listReceipts,
   shareCsvExport,
   type BankStatus,
@@ -87,6 +88,31 @@ export function TransactionsPage() {
   }, [])
   const hasBanks = bank !== null && bank.enabled && bank.items.length > 0
   const accounts = bank?.items.flatMap((item) => item.accounts) ?? []
+
+  // Receipts that a card charge was matched to: receipt_id → the card ("Visa •• 3333").
+  const [paidWith, setPaidWith] = useState<Map<string, string>>(new Map())
+  useEffect(() => {
+    if (!hasBanks || view !== 'receipts' || bank === null) return
+    let active = true
+    const cards = bank.items.flatMap((item) => item.accounts)
+    // A charge posts up to 5 days after the purchase, so read on past the selected month.
+    const range = month ? monthRange(month) : null
+    listBankTransactions({ from: range?.from })
+      .then((transactions) => {
+        if (!active) return
+        const labels = new Map<string, string>()
+        for (const t of transactions) {
+          if (!t.receipt_id || t.receipt_id === 'none') continue
+          const account = cards.find((a) => a.account_id === t.account_id)
+          labels.set(t.receipt_id, account ? (account.mask ? `${account.name} •• ${account.mask}` : account.name) : 'Card')
+        }
+        setPaidWith(labels)
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [hasBanks, view, month, bank])
 
   useEffect(() => {
     if (view !== 'receipts') return
@@ -299,6 +325,7 @@ export function TransactionsPage() {
                       receipt={receipt}
                       categories={categories}
                       highlighted={receipt.receipt_id === highlight}
+                      paidWith={paidWith.get(receipt.receipt_id)}
                     />
                   ))}
                 </ul>
@@ -316,10 +343,13 @@ function ReceiptCard({
   receipt,
   categories,
   highlighted,
+  paidWith,
 }: {
   receipt: Receipt
   categories: CategoriesState
   highlighted: boolean
+  /** The card or account whose charge this receipt explains, if matched. */
+  paidWith?: string
 }) {
   const ref = useRef<HTMLLIElement>(null)
 
@@ -344,6 +374,7 @@ function ReceiptCard({
             </span>
             <span className="muted">
               {formatDate(receipt.purchased_at)} · {count} item{count === 1 ? '' : 's'}
+              {paidWith && ` · 💳 ${paidWith}`}
             </span>
           </span>
           <strong className="receipt-amount">{formatMoney(receipt.total, receipt.currency)}</strong>

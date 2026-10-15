@@ -292,6 +292,9 @@ class FakeRunner:
 
 
 class FakeRepository:
+    def list_bank_transactions(self, filters: object) -> list[object]:
+        return []
+
     def list_receipts(self, filters: ReceiptFilter) -> list[Receipt]:
         return [receipt("2026-09-05", "FreshCo", [("Milk", "5.49", "Groceries")])]
 

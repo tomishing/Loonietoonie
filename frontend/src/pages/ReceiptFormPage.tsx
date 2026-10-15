@@ -20,6 +20,18 @@ import type { TransactionsLocationState } from './TransactionsPage'
 
 const FALLBACK_CURRENCY = 'CAD'
 const COMMON_CURRENCIES = ['CAD', 'USD', 'JPY', 'EUR', 'GBP', 'AUD', 'CNY', 'KRW', 'MXN']
+const CURRENCY_NAMES: Record<string, string> = {
+  CAD: 'Canadian dollar',
+  USD: 'US dollar',
+  JPY: 'Japanese yen',
+  EUR: 'Euro',
+  GBP: 'British pound',
+  AUD: 'Australian dollar',
+  CNY: 'Chinese yuan',
+  KRW: 'Korean won',
+  MXN: 'Mexican peso',
+}
+const OTHER_CURRENCY = 'other'
 
 interface ItemRow {
   key: number
@@ -107,6 +119,8 @@ export function ReceiptFormPage() {
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
+  // "Other…" in the currency dropdown switches to a text box for any 3-letter code.
+  const [customCurrency, setCustomCurrency] = useState(false)
   const errorRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => () => (photoUrl ? URL.revokeObjectURL(photoUrl) : undefined), [photoUrl])
@@ -283,20 +297,40 @@ export function ReceiptFormPage() {
           </label>
           <label>
             Currency
-            <input
-              value={form.currency}
-              onChange={(event) => setField('currency', event.target.value.toUpperCase())}
-              list="currencies"
-              maxLength={3}
-              pattern="[A-Za-z]{3}"
-              title="3-letter currency code, e.g. USD"
-              required
-            />
-            <datalist id="currencies">
-              {COMMON_CURRENCIES.map((code) => (
-                <option key={code} value={code} />
-              ))}
-            </datalist>
+            {/* A dropdown, not a text box with suggestions: Android only suggests codes that start
+                with what's already typed, so with "CAD" filled in no other currency showed up. */}
+            {customCurrency || !COMMON_CURRENCIES.includes(form.currency) ? (
+              <input
+                value={form.currency}
+                onChange={(event) => setField('currency', event.target.value.toUpperCase())}
+                maxLength={3}
+                pattern="[A-Za-z]{3}"
+                title="3-letter currency code, e.g. CHF"
+                placeholder="e.g. CHF"
+                autoCapitalize="characters"
+                required
+              />
+            ) : (
+              <select
+                value={form.currency}
+                onChange={(event) => {
+                  if (event.target.value === OTHER_CURRENCY) {
+                    setCustomCurrency(true)
+                    setField('currency', '')
+                  } else {
+                    setField('currency', event.target.value)
+                  }
+                }}
+                required
+              >
+                {COMMON_CURRENCIES.map((code) => (
+                  <option key={code} value={code}>
+                    {code} · {CURRENCY_NAMES[code]}
+                  </option>
+                ))}
+                <option value={OTHER_CURRENCY}>Other…</option>
+              </select>
+            )}
           </label>
         </div>
 

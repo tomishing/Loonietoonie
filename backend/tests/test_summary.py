@@ -277,6 +277,9 @@ class FakeRepository:
     def __init__(self, receipts: list[Receipt]) -> None:
         self.receipts = receipts
 
+    def list_bank_transactions(self, filters: object) -> list[object]:
+        return []
+
     def list_receipts(self, filters: ReceiptFilter) -> list[Receipt]:
         return self.receipts
 

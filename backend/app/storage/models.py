@@ -111,6 +111,12 @@ class ReceiptFilter(BaseModel):
 
 BankTransactionKind = Literal["spending", "income", "transfer"]
 
+# Spending records built from bank transactions without a receipt (see services/spending_sources.py)
+# use this prefix for their receipt_id, so they never collide with real receipt UUIDs.
+BANK_RECEIPT_PREFIX = "bank:"
+# bank_transactions.receipt_id value meaning "the user says no receipt matches this charge".
+NO_RECEIPT = "none"
+
 
 class BankAccount(BaseModel):
     account_id: str
@@ -137,7 +143,8 @@ class BankTransaction(BaseModel):
     subcategory: str
     plaid_category: str
     pending: bool
-    # The receipt that explains this charge (receipt matching, phase 10b). "" for none.
+    # The receipt that explains this charge (receipt matching): a receipt UUID, "" when not matched
+    # yet, or NO_RECEIPT when the user said no receipt matches.
     receipt_id: str = ""
 
 

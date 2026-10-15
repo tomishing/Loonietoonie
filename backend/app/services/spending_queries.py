@@ -12,7 +12,7 @@ import pandas as pd
 from pydantic import BaseModel, Field, model_validator
 
 from app.services.summary import build_frames, summarize
-from app.storage.models import Receipt, ReceiptFilter
+from app.storage.models import BANK_RECEIPT_PREFIX, Receipt, ReceiptFilter
 
 MAX_ROWS = 50
 MAX_RECEIPTS = 30
@@ -166,6 +166,7 @@ class SpendingQueries:
             "receipts": [
                 {
                     "date": r.purchased_at.isoformat(),
+                    "source": "bank" if r.receipt_id.startswith(BANK_RECEIPT_PREFIX) else "receipt",
                     "store": r.store,
                     "total": _money(r.total),
                     "items": [

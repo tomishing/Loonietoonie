@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -11,6 +12,7 @@ from app.bank.plaid import BankProvider, PlaidError
 from app.bank.token_store import TokenStore
 from app.config import Settings, get_settings
 from app.services import bank as service
+from app.services import matching
 from app.sheets.schema import utc_now_iso
 from app.storage.dependencies import get_repository
 from app.storage.models import BankTransaction, BankTransactionFilter
@@ -92,11 +94,17 @@ def link_item(
 
 @router.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def unlink_item(
-    item_id: str, user: UserDep, repository: RepositoryDep, provider: ProviderDep, store: StoreDep
+    item_id: str,
+    user: UserDep,
+    repository: RepositoryDep,
+    provider: ProviderDep,
+    store: StoreDep,
+    remove_transactions: bool = False,
 ) -> Response:
-    """Unlink a bank: revoke access and delete the token. Imported transactions stay in the Sheet."""
+    """Unlink a bank: revoke access and delete the token. Imported transactions stay in the Sheet
+    unless `remove_transactions=true` (they are then marked deleted)."""
     try:
-        service.unlink_item(provider, store, repository, user.sub, item_id)
+        service.unlink_item(provider, store, repository, user.sub, item_id, remove_transactions)
     except service.ItemNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Linked bank not found") from exc
     except PlaidError as exc:
@@ -133,3 +141,52 @@ def list_transactions(
     return repository.list_bank_transactions(
         BankTransactionFilter(date_from=date_from, date_to=date_to, account_id=account_id, category=category)
     )
+
+
+class ReceiptCandidate(BaseModel):
+    receipt_id: str
+    store: str
+    purchased_at: date
+    total: Decimal
+    currency: str
+    # True when the automatic rules would accept this receipt for the charge.
+    likely: bool
+
+
+class ReceiptChoice(BaseModel):
+    # A receipt ID, or null for "no receipt matches this charge" (remembered).
+    receipt_id: str | None
+
+
+@router.get("/transactions/{transaction_id}/candidates", response_model=list[ReceiptCandidate])
+def receipt_candidates(
+    transaction_id: str, user: UserDep, repository: RepositoryDep
+) -> list[ReceiptCandidate]:
+    """Receipts that could explain a charge (same currency, within a week), best first."""
+    try:
+        found = matching.candidates(repository, transaction_id)
+    except matching.MatchError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return [
+        ReceiptCandidate(
+            receipt_id=c.receipt.receipt_id,
+            store=c.receipt.store,
+            purchased_at=c.receipt.purchased_at,
+            total=c.receipt.total,
+            currency=c.receipt.currency,
+            likely=c.score >= 0,
+        )
+        for c in found
+    ]
+
+
+@router.put("/transactions/{transaction_id}/receipt", status_code=status.HTTP_204_NO_CONTENT)
+def choose_receipt(
+    transaction_id: str, body: ReceiptChoice, user: UserDep, repository: RepositoryDep
+) -> Response:
+    """Match a charge to a receipt by hand, or mark it as having no receipt."""
+    try:
+        matching.set_match(repository, transaction_id, body.receipt_id)
+    except matching.MatchError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

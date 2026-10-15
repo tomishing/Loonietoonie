@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Literal
 
 from app.services.summary import NOT_ITEMIZED
-from app.storage.models import Receipt, ReceiptFilter
+from app.storage.models import BANK_RECEIPT_PREFIX, Receipt, ReceiptFilter
 
 ExportKind = Literal["items", "receipts"]
 
@@ -21,9 +21,20 @@ ITEM_COLUMNS = [
     "amount",
     "currency",
     "receipt_total",
+    "source",
     "receipt_id",
 ]
-RECEIPT_COLUMNS = ["date", "store", "total", "currency", "items", "categories", "photo", "receipt_id"]
+RECEIPT_COLUMNS = [
+    "date",
+    "store",
+    "total",
+    "currency",
+    "items",
+    "categories",
+    "photo",
+    "source",
+    "receipt_id",
+]
 
 # Cells starting with these are treated as formulas by spreadsheet apps (CSV injection).
 FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
@@ -33,6 +44,11 @@ UTF8_BOM = "﻿"  # lets Excel open UTF-8 (Japanese, French accents) correctly
 def safe_text(value: str) -> str:
     """Neutralize text that a spreadsheet would run as a formula. Used for free-text columns only."""
     return "'" + value if value.startswith(FORMULA_PREFIXES) else value
+
+
+def _source(receipt: Receipt) -> str:
+    """receipt, or bank for a card/bank charge that no receipt explains."""
+    return "bank" if receipt.receipt_id.startswith(BANK_RECEIPT_PREFIX) else "receipt"
 
 
 def _money(value: Decimal) -> str:
@@ -64,6 +80,7 @@ def export_csv(receipts: list[Receipt], kind: ExportKind, filters: ReceiptFilter
                     len(receipt.items),
                     safe_text("; ".join(categories)),
                     receipt.image_link,
+                    _source(receipt),
                     receipt.receipt_id,
                 ]
             )
@@ -71,7 +88,7 @@ def export_csv(receipts: list[Receipt], kind: ExportKind, filters: ReceiptFilter
 
     writer.writerow(ITEM_COLUMNS)
     for receipt in ordered:
-        common_tail = [receipt.currency, _money(receipt.total), receipt.receipt_id]
+        common_tail = [receipt.currency, _money(receipt.total), _source(receipt), receipt.receipt_id]
         itemized = Decimal(0)
         for item in receipt.items:
             amount = item.quantity * item.price

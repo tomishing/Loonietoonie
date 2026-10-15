@@ -15,7 +15,7 @@ import pandas as pd
 from pydantic import BaseModel
 
 from app.sheets.schema import TAX_CATEGORY
-from app.storage.models import Receipt
+from app.storage.models import BANK_RECEIPT_PREFIX, Receipt
 
 COMPARE_MONTHS = 3
 TREND_MONTHS = 12
@@ -92,6 +92,8 @@ class Summary(BaseModel):
     period: Period
     total: Decimal
     receipt_count: int
+    # Of receipt_count: card/bank charges without a receipt (phase 10b).
+    bank_transaction_count: int = 0
     previous_total: Decimal
     average_total: Decimal | None
     categories: list[CategorySpending]
@@ -146,6 +148,9 @@ def build_frames(receipts: list[Receipt]) -> Frames:
             }
         )
         itemized = Decimal(0)
+        # Card/bank charges without a receipt have the merchant as their only "item": they count
+        # towards categories and stores, but not towards "bought most often" (key "").
+        from_bank = receipt.receipt_id.startswith(BANK_RECEIPT_PREFIX)
         for item in receipt.items:
             amount = item.quantity * item.price
             itemized += amount
@@ -159,7 +164,7 @@ def build_frames(receipts: list[Receipt]) -> Frames:
                     "category": item.category,
                     "subcategory": item.subcategory,
                     "name": item.name.strip(),
-                    "key": item.name.strip().casefold(),
+                    "key": "" if from_bank else item.name.strip().casefold(),
                     "amount": amount,
                 }
             )
@@ -370,6 +375,7 @@ def summarize(
         period=period,
         total=total,
         receipt_count=len(current),
+        bank_transaction_count=int(current["receipt_id"].str.startswith(BANK_RECEIPT_PREFIX).sum()),
         previous_total=previous_total,
         average_total=average_total,
         categories=categories,

@@ -304,6 +304,37 @@ class SheetsRepository:
         self._append("bank_transactions", tab.headers, new_records)
         return changes
 
+    def set_bank_receipt_ids(self, updates: dict[str, str]) -> None:
+        if not updates:
+            return
+        tab = self._read("bank_transactions", fresh=True)
+        now = utc_now_iso()
+        self._write_rows(
+            [
+                (
+                    "bank_transactions",
+                    _with_values(
+                        row,
+                        tab.headers,
+                        {"receipt_id": updates[row.values["transaction_id"]], "updated_at": now},
+                    ),
+                )
+                for row in _active(tab)
+                if row.values.get("transaction_id") in updates
+            ]
+        )
+
+    def remove_bank_transactions(self, account_ids: list[str]) -> int:
+        tab = self._read("bank_transactions", fresh=True)
+        deleted = {"deleted": TRUE, "updated_at": utc_now_iso()}
+        writes = [
+            ("bank_transactions", _with_values(row, tab.headers, deleted))
+            for row in _active(tab)
+            if row.values.get("account_id") in set(account_ids)
+        ]
+        self._write_rows(writes)
+        return len(writes)
+
     def list_bank_transactions(self, filters: BankTransactionFilter) -> list[BankTransaction]:
         transactions: list[BankTransaction] = []
         for row in _active(self._read("bank_transactions")):

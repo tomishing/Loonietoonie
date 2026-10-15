@@ -71,6 +71,7 @@ def test_items_export_one_row_per_item_newest_first() -> None:
         "amount": "5.49",
         "currency": "CAD",
         "receipt_total": "4.49",
+        "source": "receipt",
         "receipt_id": RECEIPTS[0].receipt_id,
     }
 
@@ -137,6 +138,9 @@ class FakeRepository:
     def __init__(self) -> None:
         self.filters: list[ReceiptFilter] = []
 
+    def list_bank_transactions(self, filters: object) -> list[object]:
+        return []
+
     def list_receipts(self, filters: ReceiptFilter) -> list[Receipt]:
         self.filters.append(filters)
         return RECEIPTS
@@ -180,9 +184,10 @@ def test_export_endpoint_passes_filters_and_currency(client: TestClient, reposit
         },
     )
 
-    assert repository.filters == [
-        ReceiptFilter(date_from=date(2026, 9, 1), date_to=date(2026, 10, 31), category="Groceries")
-    ]
+    # The unfiltered read tells which card charges a receipt explains; the filtered one selects rows.
+    assert repository.filters[-1] == ReceiptFilter(
+        date_from=date(2026, 9, 1), date_to=date(2026, 10, 31), category="Groceries"
+    )
     assert [r["currency"] for r in rows(response.content.decode("utf-8"))] == ["JPY"]
     assert "loonietoonie-receipts-" in response.headers["content-disposition"]
 

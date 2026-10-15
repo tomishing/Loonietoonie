@@ -324,6 +324,8 @@ export interface Summary {
   period: { month: string; start: string; end: string; partial: boolean }
   total: string
   receipt_count: number
+  /** Of receipt_count: card/bank charges without a receipt. */
+  bank_transaction_count: number
   previous_total: string
   average_total: string | null
   categories: CategorySpending[]
@@ -498,8 +500,31 @@ export function linkBank(publicToken: string): Promise<ItemSyncResult> {
   return apiPost<ItemSyncResult>('/api/bank/items', { public_token: publicToken })
 }
 
-export function unlinkBank(itemId: string): Promise<void> {
-  return apiDelete(`/api/bank/items/${encodeURIComponent(itemId)}`)
+/** Unlink a bank; with removeTransactions its imported transactions are removed from the Sheet too. */
+export function unlinkBank(itemId: string, removeTransactions = false): Promise<void> {
+  const query = removeTransactions ? '?remove_transactions=true' : ''
+  return apiDelete(`/api/bank/items/${encodeURIComponent(itemId)}${query}`)
+}
+
+export interface ReceiptCandidate {
+  receipt_id: string
+  store: string
+  purchased_at: string
+  total: string
+  currency: string
+  /** The automatic rules would accept it. */
+  likely: boolean
+}
+
+export function receiptCandidates(transactionId: string): Promise<ReceiptCandidate[]> {
+  return apiGet<ReceiptCandidate[]>(`/api/bank/transactions/${encodeURIComponent(transactionId)}/candidates`)
+}
+
+/** Match a charge to a receipt, or (null) mark it as having no receipt. */
+export function chooseReceipt(transactionId: string, receiptId: string | null): Promise<void> {
+  return apiPut<void>(`/api/bank/transactions/${encodeURIComponent(transactionId)}/receipt`, {
+    receipt_id: receiptId,
+  })
 }
 
 export async function syncBanks(): Promise<ItemSyncResult[]> {

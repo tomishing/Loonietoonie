@@ -272,9 +272,11 @@ Tests: `tests/samples/` holds OCR texts in English (Ontario, HST), French (Québ
 | GET | `/api/bank/items` | `{enabled, items}`: linked banks/cards with their accounts and last sync (`enabled: false` when Plaid isn't configured) |
 | POST | `/api/bank/link-token` | `{link_token}` to open Plaid Link (503 if not configured) |
 | POST | `/api/bank/items` | `{public_token}` from Plaid Link → store the encrypted token, save accounts, first import; 201 with the sync result |
-| DELETE | `/api/bank/items/{item_id}` | Unlink: revoke at Plaid (`/item/remove`), delete the token, soft-delete the accounts. Imported transactions stay; 204 |
+| DELETE | `/api/bank/items/{item_id}` | Unlink: revoke at Plaid (`/item/remove`), delete the token, soft-delete the accounts. Imported transactions stay unless `remove_transactions=true`; 204 |
 | POST | `/api/bank/sync` | Import new/changed/removed transactions from every linked item → per item `{status: ok / needs_relink / error, changes}` |
 | GET | `/api/bank/transactions` | Imported transactions, newest first. Filters: `from`, `to`, `account_id`, `category` |
+| GET | `/api/bank/transactions/{id}/candidates` | Receipts that could explain a charge (same currency, ±7 days), best first, with `likely` |
+| PUT | `/api/bank/transactions/{id}/receipt` | `{receipt_id}` to match by hand, or `{receipt_id: null}` for "no receipt"; 204 |
 | GET | `/api/export/csv` | CSV download (§7 Export). `kind=items` (default) or `receipts`; filters `from`, `to`, `category`, `subcategory`, `currency` |
 
 Request and response bodies are Pydantic models. Money values (`total`, `price`, `quantity`) are JSON **strings** in responses (e.g. `"3.49"`); requests accept strings or numbers. Storage problems return 502; an expired Google grant returns 401.
@@ -312,7 +314,7 @@ Updates and deletes always re-read the tabs, so row numbers are correct even if 
   - `/account`: profile, spreadsheet link, enter-by-hand link, **Bank accounts & cards** (linked banks/cards with their accounts, Sync now, Unlink, Link a bank or credit card; hidden when Plaid isn't configured), categories, Sign out.
   - `/scan`: take or choose a photo; scanning starts at once on a "Scanning your receipt…" screen (on-device OCR, then the text, and the photo once if needed), then the review screen opens.
   - `/transactions`: **all** receipts by default (each card collapsed to store, date, item count and total; tap to see the items, Edit and Photo), newest purchase date first, grouped under month headings with each month's total (per currency). Optional filters as chips (All, This month, a month picker, category, subcategory), kept in the URL. After saving, the list opens unfiltered and scrolls to and highlights the saved receipt, so receipts dated in other months are never hidden.
-  - `/receipts/new` and `/receipts/:id/edit`: the receipt form (store, date, currency, items with quantity, unit price, category and an optional subcategory picked from that category's list, total). The total follows the items' sum until the user edits it. Edit also offers Delete. The currency defaults to `DEFAULT_CURRENCY` (from `/api/auth/me`).
+  - `/receipts/new` and `/receipts/:id/edit`: the receipt form (store, date, currency, items with quantity, unit price, category and an optional subcategory picked from that category's list, total). The total follows the items' sum until the user edits it. Edit also offers Delete. The currency is a dropdown of common currencies (CAD, USD, JPY, EUR, GBP, AUD, CNY, KRW, MXN) with **Other…** for any 3-letter code, and defaults to `DEFAULT_CURRENCY` (from `/api/auth/me`).
   - Review screen: `/receipts/new` with a scan result in router state. It is pre-filled from the draft, lists the issues, shows the photo, keeps the scanned total as read, and uploads the photo after saving.
   - Item rows show the subcategory (or the category when there is none). Choosing a category adds a subcategory filter chip when that category has subcategories (`subcategory` in the URL).
   - The Account page lists the categories; tapping one shows its subcategories with their descriptions. It says they are edited in the spreadsheet.
@@ -331,15 +333,28 @@ Purpose: capture spending that has no receipt photo (card and bank transactions)
 - **Errors:** an item whose bank needs a new sign-in (`ITEM_LOGIN_REQUIRED` and similar) reports `needs_relink`; the app asks the user to unlink and link again (Plaid's update mode comes later). Other Plaid errors report `error` for that item only.
 - **Unlink:** revokes the item at Plaid, deletes its token, and soft-deletes its accounts. Imported transactions stay in the Sheet.
 - **Transactions page:** a **Receipts / Bank & card** switch (`view=bank` in the URL) appears once a bank is linked. The bank view shows transactions by month with merchant, date, account (name •• last 4), category or Transfer/Income, Pending, and refunds as +amount. Its total counts only `spending`. Month and category filters apply.
-- **Not yet (10b):** bank spending in Patterns, Ask, and CSV, and receipt matching. Until then, Patterns stays receipts-only, so nothing is counted twice.
+- **Unlink and remove:** Unlink also asks whether to remove the bank's imported transactions (soft-deleted; `DELETE …?remove_transactions=true`), e.g. to clear Sandbox test data.
+
+### Receipt matching and combined spending (phase 10b)
+
+A scanned receipt and its card charge are the same purchase, so they must count once.
+
+- **Matching** (`app/services/matching.py`): a spending charge and a receipt match when the currency is the same, the charge is dated from 1 day before to 5 days after the purchase, and either the amount equals the receipt total (within 2 of the currency's smallest unit) or, for receipts with Dining Out items, the charge is up to 30% more (a tip on the card) **and** the store names match. Names match when they share a word after lower-casing, removing accents, numbers, and noise words ("FreshCo" ↔ "FRESHCO #1234 TORONTO"); different scripts (e.g. Japanese store names) never match by name. An amount match without a name match is accepted only when it is the only option for both the charge and the receipt. Pairs are taken best first (exact amount, name, closest date), one receipt per charge.
+- **Stored** in `bank_transactions.receipt_id`: a receipt UUID (matched), empty (not matched yet), or `none` (the user said no receipt matches; never auto-matched again).
+- **When:** after every bank sync or link, and after a receipt is saved, edited, or deleted (best effort). Matches to deleted receipts are cleared; other existing matches, including ones chosen by hand, are kept.
+- **Fixing:** each bank row opens to show the match: **View receipt** and **Not this receipt**, or **Match a receipt** (receipts in the same currency within 7 days, best first, likely ones marked; `GET /api/bank/transactions/{id}/candidates`) and **No receipt** (`PUT /api/bank/transactions/{id}/receipt` with a receipt ID or `null`). Matching a receipt chosen by hand unmatches any other charge it was matched to. Receipt cards in the Receipts view show the card they were paid with ("💳 Plaid Credit Card •• 3333").
+- **Combined spending** (`app/services/spending_sources.py`): Patterns, Ask, and CSV export use receipts **plus** every spending charge that no existing receipt explains, as a one-item record (`receipt_id` `bank:<transaction_id>`, store and item = merchant, with the charge's category and subcategory). Matched charges are left out (the receipt and its items count instead). Transfers, card payments, and income never count. Refunds (negative amounts) lower their category. Category filters apply to charges by their category.
+  - Patterns: charges count in totals, categories, the trend, and top stores, but not in "Bought most often". The period line says "includes N card & bank charges without a receipt" (`bank_transaction_count`).
+  - Ask: the prompt explains these records; `find_receipts` marks them `"source": "bank"`.
+  - CSV: both exports have a `source` column (`receipt` or `bank`).
 - **Android:** Plaid Link runs inside the app's WebView. Sandbox and most banks work; banks that sign in through their own app or site (OAuth) need a registered redirect URI and may need Plaid's Android SDK later.
 
 ### Export (CSV)
 
 `GET /api/export/csv` downloads the user's receipts for Excel, Numbers, or Google Sheets. Filename: `loonietoonie-<kind>-<today>.csv`.
 
-- `kind=items` (default): one row per item: `date, store, item, category, subcategory, quantity, unit_price, amount (= quantity × unit_price), currency, receipt_total, receipt_id`. When a receipt's total differs from its items, a `(not itemized)` row keeps `amount` adding up to the receipt totals. With a `category` or `subcategory` filter, only matching items are included (and no `(not itemized)` rows).
-- `kind=receipts`: one row per receipt: `date, store, total, currency, items (count), categories, photo (Drive link), receipt_id`. A `category` filter keeps receipts that have at least one item in it.
+- `kind=items` (default): one row per item: `date, store, item, category, subcategory, quantity, unit_price, amount (= quantity × unit_price), currency, receipt_total, source, receipt_id`. When a receipt's total differs from its items, a `(not itemized)` row keeps `amount` adding up to the receipt totals. With a `category` or `subcategory` filter, only matching items are included (and no `(not itemized)` rows).
+- `kind=receipts`: one row per receipt: `date, store, total, currency, items (count), categories, photo (Drive link), source, receipt_id`. `source` is `receipt` or `bank` (a card/bank charge without a receipt, phase 10b). A `category` filter keeps receipts that have at least one item in it.
 - Newest first; deleted rows are never exported. All currencies unless `currency` is given (each row says its currency; nothing is converted).
 - UTF-8 **with a byte-order mark**, so Excel shows Japanese and French text correctly; `\r\n` line endings; ISO dates; amounts as plain decimals (`-1.00` for discounts).
 - **CSV injection:** free-text cells (store, item, category) starting with `=`, `+`, `-`, `@`, tab, or CR get a leading `'`, so spreadsheet apps show them as text instead of running them as formulas. Number and date columns are never altered.
@@ -366,7 +381,7 @@ Purpose: answer questions about actual spending ("What did I spend most on this 
 
 ### Dashboard ("Patterns", `/`)
 
-Purpose: see actual spending patterns. Computed on the backend with pandas (`app/services/summary.py`) from all receipts, served by `GET /api/summary`.
+Purpose: see actual spending patterns. Computed on the backend with pandas (`app/services/summary.py`) from all receipts plus card and bank charges that no receipt explains (phase 10b), served by `GET /api/summary`.
 
 - **One currency at a time.** The dashboard shows `DEFAULT_CURRENCY` (CAD); a switcher appears when there are receipts in other currencies. Amounts are never converted or added across currencies.
 - **Period:** one month (‹ › and a month picker; no future months). For the **month in progress**, every comparison uses the same days (1 to today) of earlier months, so a half month isn't compared with full months.
@@ -451,7 +466,7 @@ External setup: an Anthropic API key, a Google Cloud project with the Sheets + D
 | 8 | CSV export (items or receipts, current filters, injection-safe) | Done |
 | 9 | Capacitor Android app (`com.loonietoonie.app`): ML Kit OCR behind `recognizeReceipt()`, system-browser sign-in with bearer tokens, CSV via the share sheet, mascot icon | Done |
 | 10a | Bank and card linking: Plaid Link, encrypted token store (storage stage 3), import transactions into the Sheet, "Bank & card" view in Transactions, unlink | Done |
-| 10b | Receipt matching (a receipt and its card charge count once; matched charges use the receipt's items), bank spending in Patterns, Ask, and CSV | |
+| 10b | Receipt matching (a receipt and its card charge count once; matched charges use the receipt's items), bank spending in Patterns, Ask, and CSV | Done |
 | 11 | Later: savings step (monthly budgets per category with budget vs actual, saved amount, saving/investment suggestions) | |
 
 ## 11. Open questions

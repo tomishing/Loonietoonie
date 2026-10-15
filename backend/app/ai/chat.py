@@ -55,6 +55,11 @@ user's categories are listed below as "Category: subcategory; subcategory" (a na
 contain commas). Items without a subcategory have "" as their subcategory. Taxes and fees \
 added on top of prices are items in the "Tax & Fees" category, and discounts are items with \
 negative prices.
+- Spending also includes card and bank charges imported from linked accounts that no receipt \
+explains. Each one looks like a receipt with a single item: the merchant name, the amount, and \
+a category (find_receipts marks them "source": "bank"). A charge matched to a scanned receipt \
+is not listed separately, so nothing counts twice. Transfers, card payments, and income are not \
+spending and never appear.
 - "(not itemized)" is the part of a receipt total that its items don't cover.
 - Amounts in different currencies are never added together. Use the default currency \
 unless the person asks about another one.

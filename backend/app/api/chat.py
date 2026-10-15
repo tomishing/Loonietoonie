@@ -10,8 +10,8 @@ from app.ai.chat import ChatMessage, ChatRunner, ClaudeChatRunner
 from app.ai.receipt_parser import claude_client
 from app.config import Settings, get_settings
 from app.services.spending_queries import SpendingQueries
+from app.services.spending_sources import spending_records
 from app.storage.dependencies import get_repository
-from app.storage.models import ReceiptFilter
 from app.storage.repository import Repository
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -50,9 +50,7 @@ def chat(
 ) -> StreamingResponse:
     """Stream an answer as newline-delimited JSON events: text, status, reset, error, done."""
     # Loaded before streaming starts, so storage errors become normal HTTP errors.
-    queries = SpendingQueries(
-        repository.list_receipts(ReceiptFilter()), settings.default_currency, date.today()
-    )
+    queries = SpendingQueries(spending_records(repository), settings.default_currency, date.today())
     # "Groceries: Fresh Fruit & Vegetables; Bakery; …" so the model knows the exact names to filter by.
     # Semicolons, because a name may contain commas ("Rice, Grains & Cereal").
     categories = [

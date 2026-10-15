@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from app.bank.categories import map_category
 from app.bank.plaid import BankProvider, PlaidError, PlaidTransaction, SyncPage
 from app.bank.token_store import LinkedItem, TokenStore
+from app.services.matching import refresh_matches
 from app.storage.models import BankAccount, BankChanges, BankTransaction, Category
 from app.storage.repository import Repository
 
@@ -111,7 +112,9 @@ def link_item(
     institution_id, institution_name = provider.get_institution(access_token)
     store.add_item(user_id, item_id, access_token, institution_id, institution_name, now)
     item = next(i for i in store.list_items(user_id) if i.item_id == item_id)
-    return _sync_item(provider, store, repository, item, categories, default_currency, now)
+    result = _sync_item(provider, store, repository, item, categories, default_currency, now)
+    refresh_matches(repository)
+    return result
 
 
 def list_linked(store: TokenStore, repository: Repository, user_id: str) -> list[LinkedInstitution]:
@@ -128,9 +131,15 @@ def list_linked(store: TokenStore, repository: Repository, user_id: str) -> list
 
 
 def unlink_item(
-    provider: BankProvider, store: TokenStore, repository: Repository, user_id: str, item_id: str
-) -> None:
-    """Revoke access at Plaid and forget the token. Imported transactions stay in the Sheet."""
+    provider: BankProvider,
+    store: TokenStore,
+    repository: Repository,
+    user_id: str,
+    item_id: str,
+    remove_transactions: bool = False,
+) -> int:
+    """Revoke access at Plaid and forget the token. Imported transactions stay in the Sheet unless
+    `remove_transactions` (then they are soft-deleted). Returns the number of removed transactions."""
     item = next((i for i in store.list_items(user_id) if i.item_id == item_id), None)
     if item is None:
         raise ItemNotFoundError(item_id)
@@ -139,8 +148,10 @@ def unlink_item(
     except PlaidError as exc:
         if exc.code not in {"ITEM_NOT_FOUND", "INVALID_ACCESS_TOKEN"}:
             raise
+    account_ids = [a.account_id for a in repository.list_bank_accounts() if a.item_id == item_id]
     store.delete_item(user_id, item_id)
     repository.remove_bank_accounts(item_id)
+    return repository.remove_bank_transactions(account_ids) if remove_transactions else 0
 
 
 def sync_all(
@@ -154,12 +165,12 @@ def sync_all(
 ) -> SyncResult:
     """Import new, changed, and removed transactions for each of the user's linked items."""
     with _user_locks[user_id]:  # two syncs at once could append the same new rows twice
-        return SyncResult(
-            items=[
-                _sync_item(provider, store, repository, item, categories, default_currency, now)
-                for item in store.list_items(user_id)
-            ]
-        )
+        results = [
+            _sync_item(provider, store, repository, item, categories, default_currency, now)
+            for item in store.list_items(user_id)
+        ]
+        refresh_matches(repository)  # new charges may match receipts already saved
+        return SyncResult(items=results)
 
 
 def _sync_item(
