@@ -469,3 +469,51 @@ External setup: an Anthropic API key, a Google Cloud project with the Sheets + D
 ## 11. Open questions
 
 None at the moment. A savings step (budgets, saved amount) was planned as phase 11 and dropped (2026-10-15); spreadsheets created earlier keep their unused `budgets` tab.
+
+## 12. Release checklist
+
+Steps to take LoonieToonie from the local development setup (backend in Docker on the laptop, Android app over a USB `adb reverse` tunnel, Plaid Trial) to a release other people can use. Do them roughly in this order; each one is its own change.
+
+### Backend hosting
+
+- [ ] Host the backend on **HTTPS** with a fixed domain (a container host such as Cloud Run, Fly.io, Render, or Railway; Canadian region preferred for PIPEDA / Law 25).
+- [ ] Run **one instance**. The sync lock, `migrate_once`, and the read cache live in process memory; several instances need those moved first.
+- [ ] Give it a **persistent, backed-up volume** for `TOKEN_STORE_PATH` (the encrypted Plaid token store) and keep `TOKEN_ENCRYPTION_KEY` in the host's secret manager. Back up the volume and the key separately; losing the key means every user re-links their banks.
+- [ ] Set production config: `APP_ENV=production` (secure cookies), `FRONTEND_URL`, `FRONTEND_ORIGINS` (web origin + `https://localhost` for the Android WebView), `GOOGLE_REDIRECT_URI`, `PLAID_ENV=production`, and real secrets from the secret manager (never baked into the image).
+- [ ] Serve the **web app and the API on the same site** (e.g. `app.example.com` and `api.example.com`): the session cookie is `SameSite=Lax`, so a web app on a different site would not send it. (The Android app uses bearer tokens and is unaffected.)
+- [ ] Logging without personal data (no receipt text, no transactions, no tokens), basic uptime monitoring, and spending limits on the Anthropic key.
+
+### Web app
+
+- [ ] Deploy `frontend/` (Vercel, Netlify, or the same host) with `VITE_API_BASE_URL` pointing at the HTTPS backend.
+- [ ] `npm audit` and dependency updates before each release.
+
+### Google sign-in
+
+- [ ] Add the production domain and `GOOGLE_REDIRECT_URI` to the OAuth client; add a home page, a privacy policy URL, and authorized domains to the consent screen.
+- [ ] **Publish** the OAuth app (Testing → In production); in Testing mode refresh tokens expire after 7 days. The scopes (`openid`, `email`, `profile`, `drive.file`) should be non-sensitive; complete brand verification if a logo is shown.
+
+### Plaid
+
+- [ ] Production access beyond the Trial (10 items): choose Pay-as-you-go or Growth and check the per-item Transactions price on the Production request form.
+- [ ] Register an **HTTPS redirect URI** in the Plaid dashboard and pass it in `/link/token/create`, so banks that sign in through their own site or app (OAuth) work; test the Android app with them, and switch to Plaid's Android SDK if the WebView flow fails.
+- [ ] Plaid update mode for items that report `needs_relink` (today the user must unlink and link again).
+- [ ] Complete Plaid's security questionnaire; the privacy policy must cover bank data.
+
+### Android app
+
+- [ ] Build with `VITE_API_BASE_URL` set to the HTTPS backend (the app otherwise talks to `http://localhost:8000`) and `NODE_ENV=production` for `cap sync` (turns off WebView debugging).
+- [ ] Create an **upload keystore** outside the repository (`keytool`), keep it and its passwords in a password manager, and read them in Gradle from a git-ignored `keystore.properties` or environment variables. Use Play App Signing.
+- [ ] Bump `versionCode` / `versionName` for every release; build an **Android App Bundle** (`./gradlew bundleRelease`). Play then ships per-ABI downloads, which removes most of the bundled ML Kit model size (the debug APK is ~49 MB).
+- [ ] Google Play Console: developer account, store listing, privacy policy, **Data safety** form (financial info, photos, approximate data flows to Google, Plaid, and Anthropic), content rating, current target API level, and a closed testing track before production.
+- [ ] An in-app way to **delete server-side data** (Play requires one): unlink every bank and delete its tokens, and explain that receipts live in the user's own Google Sheet and Drive.
+
+### Privacy and legal
+
+- [ ] Privacy policy and terms (PIPEDA, Quebec Law 25): what is stored where (user's Sheet/Drive; encrypted bank tokens on the server; nothing else), what is sent to Anthropic (OCR text, the photo only on retry, chat questions and spending data) and to Plaid, no selling of data, no ads.
+- [ ] Re-read the storage roadmap (§8): staying at stage 3 keeps the privacy promise; stage 4 still needs explicit approval and the privacy checklist.
+
+### Before every release
+
+- [ ] All checks from CLAUDE.md pass (backend, frontend, Android, Docker).
+- [ ] Manual smoke test on a phone against the production backend: sign in, scan (single and multi-page), enter by hand, Patterns, Ask, CSV export, link/sync/unlink a bank, receipt matching.

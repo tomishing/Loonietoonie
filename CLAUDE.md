@@ -9,7 +9,7 @@ Working rules for Claude Code on **LoonieToonie**, a household expense app: scan
 
 | Folder | What | Check before committing |
 | --- | --- | --- |
-| `frontend/` | Vite + React + TypeScript PWA (Capacitor later) | `npm run lint && npm test && npm run build` |
+| `frontend/` | Vite + React + TypeScript PWA, also packaged as the Android app | `npm run lint && npm test && npm run build` |
 | `backend/` | FastAPI (Python 3.12), venv in `backend/.venv` | `.venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv/bin/mypy --strict app && .venv/bin/pytest` |
 | `frontend/android/` | Capacitor Android app (`com.loonietoonie.app`), ML Kit OCR plugin | `npm run android:build` (from `frontend/`) |
 | root | `docker-compose.yml` (backend dev container) | `docker compose config -q` |
@@ -43,6 +43,13 @@ Working rules for Claude Code on **LoonieToonie**, a household expense app: scan
 - Real keys live in `backend/.env`, the repo-root `.env`, or `frontend/.env`, which are all git-ignored. Commit only `.env.example` files.
 - Never put secrets in `VITE_*` variables; they are bundled into the browser code.
 - Before committing, make sure no keys appear in the staged diff.
+
+## Release
+
+- The release steps are in `specification.md` §12 (Release checklist). Do them as separate changes, and tick items off there.
+- Never commit signing keys, keystores, `keystore.properties`, or production secrets; keep them out of the repository and out of the Docker image.
+- Production config comes from the host's secret manager, never from committed files.
+- A release build points `VITE_API_BASE_URL` at the HTTPS backend; never ship one that talks to `localhost`.
 
 ## Conventions
 

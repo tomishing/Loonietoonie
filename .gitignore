@@ -21,6 +21,11 @@ frontend/android/app/build/
 *.log
 .DS_Store
 
+# Android release signing (keep keystores and their passwords out of the repository)
+*.jks
+*.keystore
+keystore.properties
+
 # Encrypted bank token store (storage stage 3); never committed
 backend/data/
 
