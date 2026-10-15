@@ -77,7 +77,6 @@ TABS: dict[str, tuple[str, ...]] = {
         "updated_at",
         "deleted",
     ),
-    "budgets": ("month", "category", "amount", "updated_at", "deleted"),
     "settings": ("key", "value", "updated_at"),
     "ocr_labels": ("receipt_id", "field", "model_value", "corrected_value"),
 }

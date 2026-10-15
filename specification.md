@@ -6,7 +6,7 @@ This is the product and technical specification for **LoonieToonie**. `CLAUDE.md
 
 LoonieToonie is a household expense app. Users scan receipts and see **where their money goes**: their actual spending, by category and over time, and the patterns in it.
 
-The current goal is understanding real spending, not saving. How much users save (budgets, saved amount, saving suggestions) is a later step that builds on these patterns (see phase 10).
+The goal is understanding real spending, not saving: receipts and linked bank and card accounts show where the money goes. Budgets, saved amount, and saving suggestions are **out of scope** (a planned savings phase was dropped).
 
 ### Current priorities
 
@@ -150,7 +150,6 @@ The migration also runs the first time each server process uses a spreadsheet (`
 | `subcategories` | category, name, description, updated_at, deleted |
 | `bank_accounts` | account_id, item_id, institution, name, mask, type, subtype, currency, updated_at, deleted |
 | `bank_transactions` | transaction_id, account_id, date, merchant, description, amount, currency, kind, category, subcategory, plaid_category, pending, receipt_id, updated_at, deleted |
-| `budgets` | month, category, amount, updated_at, deleted |
 | `settings` | key, value, updated_at |
 | `ocr_labels` | receipt_id, field, model_value, corrected_value (opt-in) |
 
@@ -267,7 +266,6 @@ Tests: `tests/samples/` holds OCR texts in English (Ontario, HST), French (Québ
 | PUT | `/api/receipts/{id}` | Replace a receipt's fields and items (§5) |
 | DELETE | `/api/receipts/{id}` | Soft-delete the receipt and its items; 204 |
 | GET | `/api/summary?month=YYYY-MM&currency=CAD` | Spending patterns for one month and one currency (§7 Dashboard). Defaults: this month, `DEFAULT_CURRENCY` |
-| GET / PUT | `/api/budgets` | Later (savings step, phase 10): monthly budgets per category |
 | POST | `/api/chat` | Spending chatbot. Body: `{messages: [{role, content}]}` (text only, last one from the user, ≤ 40 messages, ≤ 4000 chars each). Streams newline-delimited JSON events (`text`, `status`, `reset`, `error`, `done`) (§7 Chat) |
 | GET | `/api/bank/items` | `{enabled, items}`: linked banks/cards with their accounts and last sync (`enabled: false` when Plaid isn't configured) |
 | POST | `/api/bank/link-token` | `{link_token}` to open Plaid Link (503 if not configured) |
@@ -305,7 +303,7 @@ Updates and deletes always re-read the tabs, so row numbers are correct even if 
 
 ## 7. Frontend
 
-- Pages: Login, Patterns (home), Transactions, Scan (capture → review/edit → save), Ask (chatbot), Account. A Budget page comes with the savings step (phase 10).
+- Pages: Login, Patterns (home), Transactions, Scan (capture → review/edit → save), Ask (chatbot), Account.
 - **Navigation:** phones get a bottom tab bar (Patterns · Transactions · **Scan** as a raised centre button · Ask · Account) that hides while typing; wide screens (≥ 900 px) get the same links in the top bar. The top bar shows the logo and the user's avatar (→ Account). Layout respects the Android safe areas (edge-to-edge).
 - **Look:** light theme, Plus Jakarta Sans (self-hosted via `@fontsource-variable`, no font requests to Google), soft cards, pink accent `#d63a6f` (passes AA with white text), inline SVG icons (`src/components/Icon.tsx`), skeleton loading, motion off under `prefers-reduced-motion`.
 - Built so far (routes via React Router):
@@ -467,10 +465,7 @@ External setup: an Anthropic API key, a Google Cloud project with the Sheets + D
 | 9 | Capacitor Android app (`com.loonietoonie.app`): ML Kit OCR behind `recognizeReceipt()`, system-browser sign-in with bearer tokens, CSV via the share sheet, mascot icon | Done |
 | 10a | Bank and card linking: Plaid Link, encrypted token store (storage stage 3), import transactions into the Sheet, "Bank & card" view in Transactions, unlink | Done |
 | 10b | Receipt matching (a receipt and its card charge count once; matched charges use the receipt's items), bank spending in Patterns, Ask, and CSV | Done |
-| 11 | Later: savings step (monthly budgets per category with budget vs actual, saved amount, saving/investment suggestions) | |
 
 ## 11. Open questions
 
-To be decided in the phase where they first matter:
-
-- **Phase 11 (savings step):** how "saved amount" is defined (budget minus actual, or income minus spending).
+None at the moment. A savings step (budgets, saved amount) was planned as phase 11 and dropped (2026-10-15); spreadsheets created earlier keep their unused `budgets` tab.

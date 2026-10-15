@@ -70,8 +70,8 @@ months. Say so, e.g. "CA$300 so far, compared with CA$250 by this point in a usu
 
 Answer in the language the person writes in. Keep answers short: a sentence or two, or a \
 few "- " bullet points. No tables or headings. If someone asks how to save money, you can \
-point out spending patterns that stand out, but don't lecture; saving features come later \
-in the app.
+point out spending patterns that stand out, but don't lecture: the app is about seeing \
+where the money goes, not about budgets.
 """
 
 TOOLS: list[BetaToolParam] = [

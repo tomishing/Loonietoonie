@@ -107,7 +107,8 @@ def test_migration_adds_missing_tab_and_columns_and_keeps_data() -> None:
             FakeSheet(0, "receipts", rows=[list(TABS["receipts"])]),
             FakeSheet(1, "items", rows=[list(items_headers), ["i1", "r1", "Milk", "3.49", "Groceries"]]),
             FakeSheet(2, "categories", rows=[list(TABS["categories"]), ["Snacks", "🍪", NOW, "FALSE"]]),
-            FakeSheet(3, "budgets", rows=[list(TABS["budgets"])]),
+            # A tab from an older version (budgets were dropped): kept, like any extra tab.
+            FakeSheet(3, "budgets", rows=[["month", "category", "amount", "updated_at", "deleted"]]),
             FakeSheet(4, "settings", rows=[list(TABS["settings"])]),
             FakeSheet(5, "My notes", rows=[["anything"]]),
         ],
@@ -120,6 +121,7 @@ def test_migration_adds_missing_tab_and_columns_and_keeps_data() -> None:
     assert items.rows[1] == ["i1", "r1", "Milk", "3.49", "Groceries"]
     assert api.sheet("sheet-1", "ocr_labels").rows == [list(TABS["ocr_labels"])]
     assert api.sheet("sheet-1", "My notes").rows == [["anything"]]
+    assert api.sheet("sheet-1", "budgets").rows == [["month", "category", "amount", "updated_at", "deleted"]]
     # categories tab already existed: the user's list is kept; only required categories are added
     assert api.sheet("sheet-1", "categories").rows[1:] == [
         ["Snacks", "🍪", NOW, "FALSE"],
