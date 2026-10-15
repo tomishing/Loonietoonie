@@ -108,7 +108,10 @@ def login(
     code_verifier, code_challenge = google.new_pkce_pair()
 
     response = RedirectResponse(
-        google.build_authorization_url(settings, state, code_challenge), status_code=status.HTTP_302_FOUND
+        google.build_authorization_url(
+            settings, state, code_challenge, settings.google_callback(app is not None)
+        ),
+        status_code=status.HTTP_302_FOUND,
     )
     response.set_cookie(
         OAUTH_STATE_COOKIE,
@@ -153,7 +156,7 @@ def callback(
         return fail("invalid_state")
 
     try:
-        tokens = google.exchange_code(settings, code, saved.code_verifier)
+        tokens = google.exchange_code(settings, code, saved.code_verifier, settings.google_callback(to_app))
         user = google.verify_id_token(settings, tokens.id_token)
     except google.GoogleAuthError:
         logger.warning("Google Sign-In failed", exc_info=True)

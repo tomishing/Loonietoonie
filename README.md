@@ -95,6 +95,16 @@ npm run android:run        # or: npm run android:build, then open frontend/andro
 - OCR runs on the phone with Google ML Kit (English, French, Japanese).
 - To inspect the app's WebView, use desktop Chrome → `chrome://inspect` (debug builds).
 
+### Without the USB cable (Tailscale)
+
+The phone can reach the backend on this computer over your private Tailscale network, on Wi-Fi or mobile data. The computer must be on; nothing is exposed to the public internet.
+
+1. Install Tailscale on the computer (`curl -fsSL https://tailscale.com/install.sh | sh`, `sudo tailscale up`, `sudo tailscale set --operator=$USER`) and on the phone (Play Store), signed in to the same account. In the admin console, turn on MagicDNS and HTTPS certificates.
+2. Publish the backend on the computer's HTTPS name: `tailscale serve --bg 8000` → `https://<computer>.<tailnet>.ts.net` (tailnet only; the setting survives restarts).
+3. In `frontend/.env.android.local` (git-ignored): `VITE_API_BASE_URL=https://<computer>.<tailnet>.ts.net`. The `android:*` scripts build with `--mode android`, which reads it; the website keeps using the Vite proxy.
+4. In `.env`: `APP_GOOGLE_REDIRECT_URI=https://<computer>.<tailnet>.ts.net/api/auth/callback`, and add the same URL to the Google OAuth client's **Authorized redirect URIs**. Restart the backend.
+5. Install once with `npm run android:run` (USB or wireless debugging). After that, keep Tailscale on in the phone and the app works anywhere.
+
 ## Tests and builds
 
 ```bash

@@ -57,10 +57,10 @@ def new_pkce_pair() -> tuple[str, str]:
     return verifier, pkce_challenge(verifier)
 
 
-def build_authorization_url(settings: Settings, state: str, code_challenge: str) -> str:
+def build_authorization_url(settings: Settings, state: str, code_challenge: str, redirect_uri: str) -> str:
     params = {
         "client_id": settings.google_client_id,
-        "redirect_uri": settings.google_redirect_uri,
+        "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": " ".join(SCOPES),
         "state": state,
@@ -73,7 +73,8 @@ def build_authorization_url(settings: Settings, state: str, code_challenge: str)
     return f"{AUTHORIZATION_ENDPOINT}?{urlencode(params)}"
 
 
-def exchange_code(settings: Settings, code: str, code_verifier: str) -> GoogleTokens:
+def exchange_code(settings: Settings, code: str, code_verifier: str, redirect_uri: str) -> GoogleTokens:
+    """Trade the authorization code for tokens. redirect_uri must be the one the sign-in started with."""
     try:
         response = requests.post(
             TOKEN_ENDPOINT,
@@ -81,7 +82,7 @@ def exchange_code(settings: Settings, code: str, code_verifier: str) -> GoogleTo
                 "code": code,
                 "client_id": settings.google_client_id,
                 "client_secret": settings.google_client_secret,
-                "redirect_uri": settings.google_redirect_uri,
+                "redirect_uri": redirect_uri,
                 "grant_type": "authorization_code",
                 "code_verifier": code_verifier,
             },

@@ -33,7 +33,7 @@ def start_app_login(client: TestClient, challenge: str = CHALLENGE) -> dict[str,
 
 def app_sign_in(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> Any:
     params = start_app_login(client)
-    monkeypatch.setattr(google, "exchange_code", lambda settings, code, verifier: tokens())
+    monkeypatch.setattr(google, "exchange_code", lambda settings, code, verifier, redirect_uri: tokens())
     monkeypatch.setattr(google, "verify_id_token", lambda settings, token: USER)
     return client.get("/api/auth/callback", params={"code": "auth-code", "state": params["state"]})
 
@@ -130,7 +130,7 @@ def test_app_missing_drive_permission_returns_to_the_app(
 ) -> None:
     params = start_app_login(client)
     monkeypatch.setattr(
-        google, "exchange_code", lambda settings, code, verifier: tokens(scope="openid email")
+        google, "exchange_code", lambda settings, code, verifier, redirect_uri: tokens(scope="openid email")
     )
     monkeypatch.setattr(google, "verify_id_token", lambda settings, token: USER)
 
@@ -156,3 +156,32 @@ def test_cors_allows_the_app_webview(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "https://localhost"
+
+
+def test_app_sign_in_can_use_its_own_google_callback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The phone reaches the backend at another address (e.g. Tailscale) than the website."""
+    from app.config import get_settings
+    from app.main import app
+    from tests.test_auth import make_settings
+
+    app_callback = "https://laptop.example.ts.net/api/auth/callback"
+    settings = make_settings(app_google_redirect_uri=app_callback)
+    app.dependency_overrides[get_settings] = lambda: settings
+    used: list[str] = []
+
+    def exchange(settings: object, code: str, verifier: str, redirect_uri: str) -> object:
+        used.append(redirect_uri)
+        return tokens()
+
+    monkeypatch.setattr(google, "exchange_code", exchange)
+    monkeypatch.setattr(google, "verify_id_token", lambda settings, token: USER)
+    with TestClient(app, follow_redirects=False) as client:
+        app_params = start_app_login(client)
+        client.get("/api/auth/callback", params={"code": "c", "state": app_params["state"]})
+        web = client.get("/api/auth/google")
+    app.dependency_overrides.clear()
+
+    assert app_params["redirect_uri"] == app_callback
+    assert used == [app_callback]
+    web_redirect = parse_qs(urlparse(web.headers["location"]).query)["redirect_uri"][0]
+    assert web_redirect == settings.google_redirect_uri

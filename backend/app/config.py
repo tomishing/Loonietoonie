@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     session_max_age_days: int = 30
     # Deep link the browser returns to after an Android sign-in.
     app_redirect_uri: str = "com.loonietoonie.app://auth/callback"
+    # Google callback for Android app sign-ins, when the app reaches the backend at a different
+    # address than the website (e.g. https://laptop.tailnet.ts.net/api/auth/callback while the
+    # website uses localhost). Empty: same as GOOGLE_REDIRECT_URI.
+    app_google_redirect_uri: str = ""
+
+    def google_callback(self, for_app: bool) -> str:
+        return (
+            (self.app_google_redirect_uri or self.google_redirect_uri)
+            if for_app
+            else self.google_redirect_uri
+        )
 
     default_currency: str = DEFAULT_CURRENCY
 

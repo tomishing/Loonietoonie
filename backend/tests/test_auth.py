@@ -61,7 +61,9 @@ def sign_in(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, token_response: google.GoogleTokens | None = None
 ) -> Any:
     params = start_login(client)
-    monkeypatch.setattr(google, "exchange_code", lambda settings, code, verifier: token_response or tokens())
+    monkeypatch.setattr(
+        google, "exchange_code", lambda settings, code, verifier, redirect_uri: token_response or tokens()
+    )
     monkeypatch.setattr(google, "verify_id_token", lambda settings, token: USER)
     return client.get("/api/auth/callback", params={"code": "auth-code", "state": params["state"]})
 
@@ -99,7 +101,9 @@ def test_callback_sends_pkce_verifier_matching_challenge(
     params = start_login(client)
     seen: dict[str, str] = {}
 
-    def fake_exchange(settings: Settings, code: str, code_verifier: str) -> google.GoogleTokens:
+    def fake_exchange(
+        settings: Settings, code: str, code_verifier: str, redirect_uri: str
+    ) -> google.GoogleTokens:
         seen["code"] = code
         seen["verifier"] = code_verifier
         return tokens()
@@ -206,7 +210,9 @@ def test_callback_requires_refresh_token(client: TestClient, monkeypatch: pytest
 def test_callback_handles_google_failure(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     params = start_login(client)
 
-    def failing_exchange(settings: Settings, code: str, code_verifier: str) -> google.GoogleTokens:
+    def failing_exchange(
+        settings: Settings, code: str, code_verifier: str, redirect_uri: str
+    ) -> google.GoogleTokens:
         raise google.GoogleAuthError("invalid_grant")
 
     monkeypatch.setattr(google, "exchange_code", failing_exchange)

@@ -443,8 +443,9 @@ Real values go in `.env` files, which are git-ignored. Only `.env.example` files
 
 | File | Variables |
 | --- | --- |
-| `backend/.env` (or repo-root `.env`; `backend/.env` wins) | `APP_ENV`, `FRONTEND_ORIGINS`, `FRONTEND_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_RECEIPT_MODEL`, `ANTHROPIC_CHAT_MODEL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `SESSION_SECRET` (32+ chars), `SESSION_MAX_AGE_DAYS`, `APP_REDIRECT_URI` (default `com.loonietoonie.app://auth/callback`), `DEFAULT_CURRENCY`, `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` (`sandbox` / `production`), `PLAID_COUNTRY_CODES` (default `["CA","US"]`), `TOKEN_ENCRYPTION_KEY` (32 random bytes, base64url), `TOKEN_STORE_PATH` (default `backend/data/tokens.sqlite3`; `/app/data/tokens.sqlite3` in Docker). Bank linking is off unless the Plaid keys and the encryption key are set. |
+| `backend/.env` (or repo-root `.env`; `backend/.env` wins) | `APP_ENV`, `FRONTEND_ORIGINS`, `FRONTEND_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_RECEIPT_MODEL`, `ANTHROPIC_CHAT_MODEL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `SESSION_SECRET` (32+ chars), `SESSION_MAX_AGE_DAYS`, `APP_REDIRECT_URI` (default `com.loonietoonie.app://auth/callback`), `APP_GOOGLE_REDIRECT_URI` (Google callback for Android app sign-ins when the phone reaches the backend at another address than the website; empty = `GOOGLE_REDIRECT_URI`), `DEFAULT_CURRENCY`, `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` (`sandbox` / `production`), `PLAID_COUNTRY_CODES` (default `["CA","US"]`), `TOKEN_ENCRYPTION_KEY` (32 random bytes, base64url), `TOKEN_STORE_PATH` (default `backend/data/tokens.sqlite3`; `/app/data/tokens.sqlite3` in Docker). Bank linking is off unless the Plaid keys and the encryption key are set. |
 | `frontend/.env` | `VITE_API_BASE_URL` (the Android app defaults to `http://localhost:8000` when empty), `VITE_DEV_BACKEND_URL` |
+| `frontend/.env.android.local` | Android builds only (`vite build --mode android` in the `android:*` scripts): `VITE_API_BASE_URL` for the phone, e.g. the laptop's Tailscale HTTPS name |
 
 `VITE_*` variables are visible in the browser bundle, so they never hold secrets.
 
@@ -475,6 +476,8 @@ None at the moment. A savings step (budgets, saved amount) was planned as phase 
 Steps to take LoonieToonie from the local development setup (backend in Docker on the laptop, Android app over a USB `adb reverse` tunnel, Plaid Trial) to a release other people can use. Do them roughly in this order; each one is its own change.
 
 ### Backend hosting
+
+Done for testing: the backend runs on the laptop and the phone reaches it over **Tailscale** (`tailscale serve` → `https://<laptop>.<tailnet>.ts.net`, tailnet only), so the app works without USB while the laptop is on. A public release still needs the hosting below.
 
 - [ ] Host the backend on **HTTPS** with a fixed domain (a container host such as Cloud Run, Fly.io, Render, or Railway; Canadian region preferred for PIPEDA / Law 25).
 - [ ] Run **one instance**. The sync lock, `migrate_once`, and the read cache live in process memory; several instances need those moved first.
