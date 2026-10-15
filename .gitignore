@@ -21,6 +21,9 @@ frontend/android/app/build/
 *.log
 .DS_Store
 
+# Encrypted bank token store (storage stage 3); never committed
+backend/data/
+
 # Local receipt files
 *.pdf
 *.jpg

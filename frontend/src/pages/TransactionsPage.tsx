@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router'
-import { errorMessages, exportCsvUrl, listReceipts, shareCsvExport, type Receipt } from '../api/client'
+import {
+  errorMessages,
+  exportCsvUrl,
+  getBankStatus,
+  listReceipts,
+  shareCsvExport,
+  type BankStatus,
+  type Receipt,
+} from '../api/client'
+import { BankTransactionList } from '../components/BankTransactionList'
 import { Icon } from '../components/Icon'
 import { isNativeApp } from '../platform'
 import { categoryIcon, useCategories, type CategoriesState } from '../hooks/useCategories'
@@ -43,6 +52,9 @@ export function TransactionsPage() {
   const month = searchParams.get('month') ?? ''
   const category = searchParams.get('category') ?? ''
   const subcategory = searchParams.get('subcategory') ?? ''
+  // Receipts (scanned or typed in), or transactions imported from linked banks and cards.
+  const view = searchParams.get('view') === 'bank' ? 'bank' : 'receipts'
+  const [bank, setBank] = useState<BankStatus | null>(null)
   const categories = useCategories()
   const location = useLocation()
   const { highlight, notice } = (location.state as TransactionsLocationState | null) ?? {}
@@ -66,6 +78,19 @@ export function TransactionsPage() {
 
   useEffect(() => {
     let active = true
+    getBankStatus()
+      .then((status) => active && setBank(status))
+      .catch(() => undefined) // without it, only receipts are shown
+    return () => {
+      active = false
+    }
+  }, [])
+  const hasBanks = bank !== null && bank.enabled && bank.items.length > 0
+  const accounts = bank?.items.flatMap((item) => item.accounts) ?? []
+
+  useEffect(() => {
+    if (view !== 'receipts') return
+    let active = true
     const range = month ? monthRange(month) : null
     listReceipts({
       from: range?.from,
@@ -82,7 +107,7 @@ export function TransactionsPage() {
     return () => {
       active = false
     }
-  }, [month, category, subcategory, queryKey])
+  }, [month, category, subcategory, queryKey, view])
 
   // The app's WebView can't download with the session token, so it fetches and shares the file instead.
   const shareOnApp = (event: MouseEvent, kind: 'items' | 'receipts') => {
@@ -116,6 +141,31 @@ export function TransactionsPage() {
         <p className="notice notice-warn" role="status">
           {notice}
         </p>
+      )}
+
+      {(hasBanks || view === 'bank') && (
+        <div className="segmented" role="tablist" aria-label="Show">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'receipts'}
+            className={view === 'receipts' ? 'segment segment-on' : 'segment'}
+            onClick={() => setFilter('view', '')}
+          >
+            <Icon name="list" size={18} />
+            Receipts
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'bank'}
+            className={view === 'bank' ? 'segment segment-on' : 'segment'}
+            onClick={() => setFilter('view', 'bank')}
+          >
+            <Icon name="card" size={18} />
+            Bank & card
+          </button>
+        </div>
       )}
 
       <div className="chip-row" role="group" aria-label="Filters">
@@ -160,7 +210,7 @@ export function TransactionsPage() {
               ))}
           </select>
         </label>
-        {subcategoryOptions.length > 0 && (
+        {view === 'receipts' && subcategoryOptions.length > 0 && (
           <label className={`chip-select${subcategory ? ' chip-on' : ''}`}>
             <span className="sr-only">Subcategory</span>
             <select value={subcategory} onChange={(event) => setFilter('subcategory', event.target.value)}>
@@ -175,81 +225,87 @@ export function TransactionsPage() {
         )}
       </div>
 
-      {state.status === 'loading' && (
-        <div aria-hidden="true">
-          <div className="skeleton skeleton-row" />
-          <div className="skeleton skeleton-row" />
-          <div className="skeleton skeleton-row" />
-        </div>
-      )}
-
-      {state.status === 'error' &&
-        state.messages.map((message) => (
-          <p key={message} className="notice notice-error" role="alert">
-            {message}
-          </p>
-        ))}
-
-      {state.status === 'loaded' && state.receipts.length === 0 && (
-        <div className="card empty">
-          <img src="/favicon.svg" alt="" width={64} height={64} />
-          <p>{month || category || subcategory ? 'No receipts match these filters.' : 'No receipts yet.'}</p>
-          <Link to="/scan" className="button button-primary">
-            <Icon name="camera" size={20} />
-            Scan a receipt
-          </Link>
-        </div>
-      )}
-
-      {state.status === 'loaded' && state.receipts.length > 0 && (
+      {view === 'bank' ? (
+        <BankTransactionList month={month} category={category} accounts={accounts} categories={categories} />
+      ) : (
         <>
-          <div className="summary-row">
-            <p className="summary">
-              <span className="summary-total">{totalsByCurrency(state.receipts)}</span>
-              <span className="muted">
-                {state.receipts.length} receipt{state.receipts.length === 1 ? '' : 's'}
-              </span>
-            </p>
-            <p className="export-links">
-              <span className="sr-only">Export CSV:</span>
-              <a
-                className="chip chip-action"
-                href={exportCsvUrl('items', filters)}
-                download
-                onClick={(event) => shareOnApp(event, 'items')}
-              >
-                <Icon name="download" size={16} />
-                Items CSV
-              </a>
-              <a
-                className="chip chip-action"
-                href={exportCsvUrl('receipts', filters)}
-                download
-                onClick={(event) => shareOnApp(event, 'receipts')}
-              >
-                <Icon name="download" size={16} />
-                Receipts CSV
-              </a>
-            </p>
+        {state.status === 'loading' && (
+          <div aria-hidden="true">
+            <div className="skeleton skeleton-row" />
+            <div className="skeleton skeleton-row" />
+            <div className="skeleton skeleton-row" />
           </div>
-          {groupByMonth(state.receipts).map(([groupMonth, receipts]) => (
-            <section key={groupMonth} className="month-group" aria-label={formatMonth(groupMonth)}>
-              <h2 className="month-heading">
-                <span>{formatMonth(groupMonth)}</span>
-                <span>{totalsByCurrency(receipts)}</span>
-              </h2>
-              <ul className="receipts">
-                {receipts.map((receipt) => (
-                  <ReceiptCard
-                    key={receipt.receipt_id}
-                    receipt={receipt}
-                    categories={categories}
-                    highlighted={receipt.receipt_id === highlight}
-                  />
-                ))}
-              </ul>
-            </section>
+        )}
+
+        {state.status === 'error' &&
+          state.messages.map((message) => (
+            <p key={message} className="notice notice-error" role="alert">
+              {message}
+            </p>
           ))}
+
+        {state.status === 'loaded' && state.receipts.length === 0 && (
+          <div className="card empty">
+            <img src="/favicon.svg" alt="" width={64} height={64} />
+            <p>{month || category || subcategory ? 'No receipts match these filters.' : 'No receipts yet.'}</p>
+            <Link to="/scan" className="button button-primary">
+              <Icon name="camera" size={20} />
+              Scan a receipt
+            </Link>
+          </div>
+        )}
+
+        {state.status === 'loaded' && state.receipts.length > 0 && (
+          <>
+            <div className="summary-row">
+              <p className="summary">
+                <span className="summary-total">{totalsByCurrency(state.receipts)}</span>
+                <span className="muted">
+                  {state.receipts.length} receipt{state.receipts.length === 1 ? '' : 's'}
+                </span>
+              </p>
+              <p className="export-links">
+                <span className="sr-only">Export CSV:</span>
+                <a
+                  className="chip chip-action"
+                  href={exportCsvUrl('items', filters)}
+                  download
+                  onClick={(event) => shareOnApp(event, 'items')}
+                >
+                  <Icon name="download" size={16} />
+                  Items CSV
+                </a>
+                <a
+                  className="chip chip-action"
+                  href={exportCsvUrl('receipts', filters)}
+                  download
+                  onClick={(event) => shareOnApp(event, 'receipts')}
+                >
+                  <Icon name="download" size={16} />
+                  Receipts CSV
+                </a>
+              </p>
+            </div>
+            {groupByMonth(state.receipts).map(([groupMonth, receipts]) => (
+              <section key={groupMonth} className="month-group" aria-label={formatMonth(groupMonth)}>
+                <h2 className="month-heading">
+                  <span>{formatMonth(groupMonth)}</span>
+                  <span>{totalsByCurrency(receipts)}</span>
+                </h2>
+                <ul className="receipts">
+                  {receipts.map((receipt) => (
+                    <ReceiptCard
+                      key={receipt.receipt_id}
+                      receipt={receipt}
+                      categories={categories}
+                      highlighted={receipt.receipt_id === highlight}
+                    />
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </>
+        )}
         </>
       )}
     </section>

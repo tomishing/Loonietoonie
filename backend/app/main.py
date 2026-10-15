@@ -5,7 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.api import auth, categories, chat, export, health, receipts, scan, summary
+from app.api import auth, bank, categories, chat, export, health, receipts, scan, summary
+from app.bank.token_store import TokenStoreError
 from app.config import get_settings
 from app.storage.repository import StorageError
 
@@ -32,6 +33,17 @@ def create_app() -> FastAPI:
     app.include_router(export.router, prefix="/api")
     app.include_router(scan.router, prefix="/api")
     app.include_router(receipts.router, prefix="/api")
+    app.include_router(bank.router, prefix="/api")
+
+    @app.exception_handler(TokenStoreError)
+    def token_store_error_handler(request: Request, exc: TokenStoreError) -> JSONResponse:
+        logger.error("Token store error on %s: %s", request.url.path, exc)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "detail": "Linked banks can't be read on the server. Link them again if this continues."
+            },
+        )
 
     @app.exception_handler(StorageError)
     def storage_error_handler(request: Request, exc: StorageError) -> JSONResponse:

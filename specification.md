@@ -148,6 +148,8 @@ The migration also runs the first time each server process uses a spreadsheet (`
 | `items` | item_id, receipt_id, name, quantity, price, category, subcategory, updated_at, deleted |
 | `categories` | name, icon, updated_at, deleted |
 | `subcategories` | category, name, description, updated_at, deleted |
+| `bank_accounts` | account_id, item_id, institution, name, mask, type, subtype, currency, updated_at, deleted |
+| `bank_transactions` | transaction_id, account_id, date, merchant, description, amount, currency, kind, category, subcategory, plaid_category, pending, receipt_id, updated_at, deleted |
 | `budgets` | month, category, amount, updated_at, deleted |
 | `settings` | key, value, updated_at |
 | `ocr_labels` | receipt_id, field, model_value, corrected_value (opt-in) |
@@ -267,6 +269,12 @@ Tests: `tests/samples/` holds OCR texts in English (Ontario, HST), French (Québ
 | GET | `/api/summary?month=YYYY-MM&currency=CAD` | Spending patterns for one month and one currency (§7 Dashboard). Defaults: this month, `DEFAULT_CURRENCY` |
 | GET / PUT | `/api/budgets` | Later (savings step, phase 10): monthly budgets per category |
 | POST | `/api/chat` | Spending chatbot. Body: `{messages: [{role, content}]}` (text only, last one from the user, ≤ 40 messages, ≤ 4000 chars each). Streams newline-delimited JSON events (`text`, `status`, `reset`, `error`, `done`) (§7 Chat) |
+| GET | `/api/bank/items` | `{enabled, items}`: linked banks/cards with their accounts and last sync (`enabled: false` when Plaid isn't configured) |
+| POST | `/api/bank/link-token` | `{link_token}` to open Plaid Link (503 if not configured) |
+| POST | `/api/bank/items` | `{public_token}` from Plaid Link → store the encrypted token, save accounts, first import; 201 with the sync result |
+| DELETE | `/api/bank/items/{item_id}` | Unlink: revoke at Plaid (`/item/remove`), delete the token, soft-delete the accounts. Imported transactions stay; 204 |
+| POST | `/api/bank/sync` | Import new/changed/removed transactions from every linked item → per item `{status: ok / needs_relink / error, changes}` |
+| GET | `/api/bank/transactions` | Imported transactions, newest first. Filters: `from`, `to`, `account_id`, `category` |
 | GET | `/api/export/csv` | CSV download (§7 Export). `kind=items` (default) or `receipts`; filters `from`, `to`, `category`, `subcategory`, `currency` |
 
 Request and response bodies are Pydantic models. Money values (`total`, `price`, `quantity`) are JSON **strings** in responses (e.g. `"3.49"`); requests accept strings or numbers. Storage problems return 502; an expired Google grant returns 401.
@@ -301,7 +309,7 @@ Updates and deletes always re-read the tabs, so row numbers are correct even if 
 - Built so far (routes via React Router):
   - **Login** (no route of its own): anyone who isn't signed in sees it on every route. Mascot, three feature lines, "Continue with Google", and the privacy note (receipts stay in the user's own Drive). On wide screens (≥ 900 px) it splits into two columns: the pitch on the left, a "Get started" sign-in card on the right. Sign-in errors show here. While the session is checked a splash shows; if the server can't be reached, a "Try again" button.
   - `/` **Patterns** (the home page): the dashboard (see below), with a greeting. `/dashboard` redirects here.
-  - `/account`: profile, spreadsheet link, enter-by-hand link, categories, Sign out.
+  - `/account`: profile, spreadsheet link, enter-by-hand link, **Bank accounts & cards** (linked banks/cards with their accounts, Sync now, Unlink, Link a bank or credit card; hidden when Plaid isn't configured), categories, Sign out.
   - `/scan`: take or choose a photo; scanning starts at once on a "Scanning your receipt…" screen (on-device OCR, then the text, and the photo once if needed), then the review screen opens.
   - `/transactions`: **all** receipts by default (each card collapsed to store, date, item count and total; tap to see the items, Edit and Photo), newest purchase date first, grouped under month headings with each month's total (per currency). Optional filters as chips (All, This month, a month picker, category, subcategory), kept in the URL. After saving, the list opens unfiltered and scrolls to and highlights the saved receipt, so receipts dated in other months are never hidden.
   - `/receipts/new` and `/receipts/:id/edit`: the receipt form (store, date, currency, items with quantity, unit price, category and an optional subcategory picked from that category's list, total). The total follows the items' sum until the user edits it. Edit also offers Delete. The currency defaults to `DEFAULT_CURRENCY` (from `/api/auth/me`).
@@ -310,6 +318,21 @@ Updates and deletes always re-read the tabs, so row numbers are correct even if 
   - The Account page lists the categories; tapping one shows its subcategories with their descriptions. It says they are edited in the spreadsheet.
   - Transactions show a Photo link for receipts with a photo, and "Items CSV" / "Receipts CSV" buttons for the current filters.
 - Money in the frontend is handled as decimal strings and bigint math (`src/lib/decimal.ts`), never JS floats.
+
+### Bank and card linking (phase 10a)
+
+Purpose: capture spending that has no receipt photo (card and bank transactions), through **Plaid** (Canada and US).
+
+- **Linking:** Account → "Bank accounts & cards" → **Link a bank or credit card** opens **Plaid Link** (`react-plaid-link`) with a link token from `POST /api/bank/link-token` (products `transactions`, up to 730 days of history). The bank sign-in happens inside Plaid; LoonieToonie never sees bank passwords. Plaid Link returns a public token, which `POST /api/bank/items` exchanges for an access token, stored **only** in the encrypted token store (§8), never in the Sheet or the browser.
+- **Import:** `POST /api/bank/sync` uses Plaid `/transactions/sync` from the saved cursor, page by page (restarting from the saved cursor on `TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION`). Accounts are refreshed into `bank_accounts`; added and modified transactions are upserted into `bank_transactions` by `transaction_id`, removed ones soft-deleted. On update, the bank's fields change but `kind`, `category`, `subcategory`, and `receipt_id` (the user may have edited them in the Sheet) are kept. The cursor is saved **only after** the Sheet write succeeds, so a failed sync is repeated safely. One sync at a time per user.
+- **When it syncs:** on demand only (no background jobs or webhooks): when linking, with **Sync now**, and the first time the "Bank & card" view opens in an app session.
+- **Amounts:** Plaid's sign is kept: positive = money spent, negative = refund or money in.
+- **Kind and category:** Plaid's personal finance category is mapped (`app/bank/categories.py`): transfers, credit-card and other loan payments → `transfer`, income → `income` (neither counts as spending; the mortgage payment counts as Housing › Rent & Mortgage); everything else → `spending` with the user's category and subcategory (e.g. `FOOD_AND_DRINK_COFFEE` → Dining Out › Coffee & Cafés). Names the user doesn't have fall back to Other / no subcategory. The raw Plaid code is kept in `plaid_category`.
+- **Errors:** an item whose bank needs a new sign-in (`ITEM_LOGIN_REQUIRED` and similar) reports `needs_relink`; the app asks the user to unlink and link again (Plaid's update mode comes later). Other Plaid errors report `error` for that item only.
+- **Unlink:** revokes the item at Plaid, deletes its token, and soft-deletes its accounts. Imported transactions stay in the Sheet.
+- **Transactions page:** a **Receipts / Bank & card** switch (`view=bank` in the URL) appears once a bank is linked. The bank view shows transactions by month with merchant, date, account (name •• last 4), category or Transfer/Income, Pending, and refunds as +amount. Its total counts only `spending`. Month and category filters apply.
+- **Not yet (10b):** bank spending in Patterns, Ask, and CSV, and receipt matching. Until then, Patterns stays receipts-only, so nothing is counted twice.
+- **Android:** Plaid Link runs inside the app's WebView. Sandbox and most banks work; banks that sign in through their own app or site (OAuth) need a registered redirect URI and may need Plaid's Android SDK later.
 
 ### Export (CSV)
 
@@ -387,7 +410,7 @@ Purpose: see actual spending patterns. Computed on the backend with pandas (`app
 | --- | --- | --- | --- |
 | 1 | Now (phases 1–5) | Google Sheets only | Simple, free, user-owned data |
 | 2 | Phase 6 (dashboard) or when speed matters | + on-device cache: Capacitor SQLite (`@capacitor-community/sqlite`) on Android, Dexie/IndexedDB on web PWA | Instant loads + offline. Sheets stays the source of truth; sync with `updated_at` / `deleted` (last-write-wins) |
-| 3 | Bank/card linking (phase 10) | + small **encrypted server-side token store** (server SQLite with backups, Supabase/Neon free tier, or Google Secret Manager) | Holds only `user_id`, encrypted Plaid/Flinks access tokens, Google refresh token, spreadsheet ID. **No financial data.** Bank transactions are still appended to the user's Sheet (dedupe by `transaction_id`) |
+| 3 | Bank/card linking (phase 10a, **in use**) | + small **encrypted server-side token store**: a SQLite file (`backend/data/tokens.sqlite3`, a Docker volume; git-ignored; back it up) | Holds only the user's Google ID (`sub`), Plaid item IDs, **AES-256-GCM-encrypted** access tokens (key `TOKEN_ENCRYPTION_KEY`, never in the database; user and item IDs are authenticated data), institution name, and the sync cursor. **No financial data**, no Google token, no spreadsheet ID: syncing only happens while the user's session is active. Bank accounts and transactions go to the user's Sheet (dedupe by `transaction_id`) |
 | 4 | Only if needed: sharing between users (family budgets), many users, or Sheets limits | Migrate to **PostgreSQL** (managed, Canadian region preferred) via `PostgresRepository`; Sheets becomes an export/sync option | Requires explicit approval and the privacy checklist below |
 
 Bank tokens and other secrets are never stored in the user's Google Sheet.
@@ -407,12 +430,12 @@ Real values go in `.env` files, which are git-ignored. Only `.env.example` files
 
 | File | Variables |
 | --- | --- |
-| `backend/.env` (or repo-root `.env`; `backend/.env` wins) | `APP_ENV`, `FRONTEND_ORIGINS`, `FRONTEND_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_RECEIPT_MODEL`, `ANTHROPIC_CHAT_MODEL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `SESSION_SECRET` (32+ chars), `SESSION_MAX_AGE_DAYS`, `APP_REDIRECT_URI` (default `com.loonietoonie.app://auth/callback`), `DEFAULT_CURRENCY` |
+| `backend/.env` (or repo-root `.env`; `backend/.env` wins) | `APP_ENV`, `FRONTEND_ORIGINS`, `FRONTEND_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_RECEIPT_MODEL`, `ANTHROPIC_CHAT_MODEL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `SESSION_SECRET` (32+ chars), `SESSION_MAX_AGE_DAYS`, `APP_REDIRECT_URI` (default `com.loonietoonie.app://auth/callback`), `DEFAULT_CURRENCY`, `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` (`sandbox` / `production`), `PLAID_COUNTRY_CODES` (default `["CA","US"]`), `TOKEN_ENCRYPTION_KEY` (32 random bytes, base64url), `TOKEN_STORE_PATH` (default `backend/data/tokens.sqlite3`; `/app/data/tokens.sqlite3` in Docker). Bank linking is off unless the Plaid keys and the encryption key are set. |
 | `frontend/.env` | `VITE_API_BASE_URL` (the Android app defaults to `http://localhost:8000` when empty), `VITE_DEV_BACKEND_URL` |
 
 `VITE_*` variables are visible in the browser bundle, so they never hold secrets.
 
-External setup: an Anthropic API key, a Google Cloud project with the Sheets + Drive APIs enabled, a Google OAuth client of type **Web application** (with `GOOGLE_REDIRECT_URI` under "Authorized redirect URIs"), and nothing for web OCR (Tesseract.js runs in the browser). The frontend does not need the Google client ID, because the backend runs the whole OAuth flow.
+External setup: an Anthropic API key, a Google Cloud project with the Sheets + Drive APIs enabled, a Google OAuth client of type **Web application** (with `GOOGLE_REDIRECT_URI` under "Authorized redirect URIs"), nothing for web OCR (Tesseract.js runs in the browser), and for bank linking a Plaid account (Sandbox keys for development; production needs Plaid's approval and is billed per linked item). The frontend does not need the Google client ID, because the backend runs the whole OAuth flow.
 
 ## 10. Development phases
 
@@ -427,10 +450,12 @@ External setup: an Anthropic API key, a Google Cloud project with the Sheets + D
 | 7 | Chatbot ("Ask"): streamed answers from read-only spending tools | Done |
 | 8 | CSV export (items or receipts, current filters, injection-safe) | Done |
 | 9 | Capacitor Android app (`com.loonietoonie.app`): ML Kit OCR behind `recognizeReceipt()`, system-browser sign-in with bearer tokens, CSV via the share sheet, mascot icon | Done |
-| 10 | Later: savings step (monthly budgets per category with budget vs actual, saved amount, saving/investment suggestions); bank/card linking (Plaid / Flinks) with an encrypted token store (storage stage 3) | |
+| 10a | Bank and card linking: Plaid Link, encrypted token store (storage stage 3), import transactions into the Sheet, "Bank & card" view in Transactions, unlink | Done |
+| 10b | Receipt matching (a receipt and its card charge count once; matched charges use the receipt's items), bank spending in Patterns, Ask, and CSV | |
+| 11 | Later: savings step (monthly budgets per category with budget vs actual, saved amount, saving/investment suggestions) | |
 
 ## 11. Open questions
 
 To be decided in the phase where they first matter:
 
-- **Phase 10 (savings step):** how "saved amount" is defined (budget minus actual, or income minus spending).
+- **Phase 11 (savings step):** how "saved amount" is defined (budget minus actual, or income minus spending).

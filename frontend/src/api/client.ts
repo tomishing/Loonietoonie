@@ -426,3 +426,91 @@ export function exportCsvUrl(kind: 'items' | 'receipts', filters: ReceiptFilters
   }
   return `${API_BASE_URL}/api/export/csv?${params}`
 }
+
+// --- bank and card linking (phase 10a) -----------------------------------------
+
+export interface BankAccount {
+  account_id: string
+  item_id: string
+  institution: string
+  name: string
+  /** Last 4 digits, or "". */
+  mask: string
+  type: string
+  subtype: string
+  currency: string
+}
+
+export interface LinkedInstitution {
+  item_id: string
+  institution: string
+  last_synced_at: string
+  accounts: BankAccount[]
+}
+
+export interface BankStatus {
+  /** False when the server has no Plaid keys: the feature is hidden. */
+  enabled: boolean
+  items: LinkedInstitution[]
+}
+
+export interface BankChanges {
+  added: number
+  modified: number
+  removed: number
+}
+
+export interface ItemSyncResult {
+  item_id: string
+  institution: string
+  status: 'ok' | 'needs_relink' | 'error'
+  changes: BankChanges
+  error: string | null
+}
+
+export interface BankTransaction {
+  transaction_id: string
+  account_id: string
+  date: string
+  merchant: string
+  description: string
+  /** Decimal string: > 0 money spent, < 0 refund or money in. */
+  amount: string
+  currency: string
+  /** Only "spending" counts towards spending patterns. */
+  kind: 'spending' | 'income' | 'transfer'
+  category: string
+  subcategory: string
+  plaid_category: string
+  pending: boolean
+  receipt_id: string
+}
+
+export function getBankStatus(): Promise<BankStatus> {
+  return apiGet<BankStatus>('/api/bank/items')
+}
+
+export async function createBankLinkToken(): Promise<string> {
+  return (await apiPost<{ link_token: string }>('/api/bank/link-token')).link_token
+}
+
+export function linkBank(publicToken: string): Promise<ItemSyncResult> {
+  return apiPost<ItemSyncResult>('/api/bank/items', { public_token: publicToken })
+}
+
+export function unlinkBank(itemId: string): Promise<void> {
+  return apiDelete(`/api/bank/items/${encodeURIComponent(itemId)}`)
+}
+
+export async function syncBanks(): Promise<ItemSyncResult[]> {
+  return (await apiPost<{ items: ItemSyncResult[] }>('/api/bank/sync')).items
+}
+
+export function listBankTransactions(filters: { from?: string; to?: string; category?: string } = {}): Promise<BankTransaction[]> {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) params.set(key, value)
+  }
+  const query = params.toString()
+  return apiGet<BankTransaction[]>(`/api/bank/transactions${query ? `?${query}` : ''}`)
+}

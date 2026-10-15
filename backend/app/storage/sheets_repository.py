@@ -14,7 +14,18 @@ from app.config import DEFAULT_CURRENCY
 from app.drive.receipts import upload_receipt_image
 from app.sheets.api import SheetsApi
 from app.sheets.schema import FALSE, TABS, TRUE, tab_range, utc_now_iso
-from app.storage.models import Category, Item, ItemDraft, Receipt, ReceiptDraft, ReceiptFilter
+from app.storage.models import (
+    BankAccount,
+    BankChanges,
+    BankTransaction,
+    BankTransactionFilter,
+    Category,
+    Item,
+    ItemDraft,
+    Receipt,
+    ReceiptDraft,
+    ReceiptFilter,
+)
 from app.storage.repository import StorageError
 
 logger = logging.getLogger(__name__)
@@ -228,6 +239,90 @@ class SheetsRepository:
         self._write_rows(writes)
         return True
 
+    # --- bank and card linking --------------------------------------------------
+
+    def list_bank_accounts(self) -> list[BankAccount]:
+        return [_build_account(row.values) for row in _active(self._read("bank_accounts"))]
+
+    def save_bank_accounts(self, accounts: list[BankAccount]) -> None:
+        tab = self._read("bank_accounts", fresh=True)
+        by_id = {row.values.get("account_id"): row for row in tab.rows}
+        now = utc_now_iso()
+        writes: list[tuple[str, SheetRow]] = []
+        new_records: list[Record] = []
+        for account in accounts:
+            record = _account_record(account, now)
+            row = by_id.get(account.account_id)
+            if row is None:
+                new_records.append(record)
+            else:
+                writes.append(("bank_accounts", _with_values(row, tab.headers, record)))
+        self._write_rows(writes)
+        self._append("bank_accounts", tab.headers, new_records)
+
+    def remove_bank_accounts(self, item_id: str) -> None:
+        tab = self._read("bank_accounts", fresh=True)
+        deleted = {"deleted": TRUE, "updated_at": utc_now_iso()}
+        self._write_rows(
+            [
+                ("bank_accounts", _with_values(row, tab.headers, deleted))
+                for row in _active(tab)
+                if row.values.get("item_id") == item_id
+            ]
+        )
+
+    def apply_bank_changes(self, upserts: list[BankTransaction], removed_ids: list[str]) -> BankChanges:
+        if not upserts and not removed_ids:
+            return BankChanges()
+        tab = self._read("bank_transactions", fresh=True)
+        by_id = {row.values.get("transaction_id"): row for row in tab.rows}
+        now = utc_now_iso()
+        changes = BankChanges()
+        writes: list[tuple[str, SheetRow]] = []
+        new_records: list[Record] = []
+        for transaction in upserts:
+            row = by_id.get(transaction.transaction_id)
+            if row is None:
+                record = _transaction_record(transaction, now)
+                new_records.append(record)
+                by_id[transaction.transaction_id] = SheetRow(number=-1, cells=[], values=record)
+                changes.added += 1
+            elif row.number > 0:
+                # Keep what the user may have changed; a row the user deleted stays deleted.
+                bank_fields = {
+                    k: v for k, v in _transaction_record(transaction, now).items() if k not in USER_FIELDS
+                }
+                writes.append(("bank_transactions", _with_values(row, tab.headers, bank_fields)))
+                changes.modified += 1
+        deleted = {"deleted": TRUE, "updated_at": now}
+        for transaction_id in removed_ids:
+            row = by_id.get(transaction_id)
+            if row is not None and row.number > 0 and row.values.get("deleted", "").upper() != TRUE:
+                writes.append(("bank_transactions", _with_values(row, tab.headers, deleted)))
+                changes.removed += 1
+        self._write_rows(writes)
+        self._append("bank_transactions", tab.headers, new_records)
+        return changes
+
+    def list_bank_transactions(self, filters: BankTransactionFilter) -> list[BankTransaction]:
+        transactions: list[BankTransaction] = []
+        for row in _active(self._read("bank_transactions")):
+            try:
+                transaction = _build_transaction(row.values)
+            except (ValueError, InvalidOperation):
+                logger.warning("Skipping unreadable bank transaction row %d", row.number)
+                continue
+            if filters.date_from and transaction.date < filters.date_from:
+                continue
+            if filters.date_to and transaction.date > filters.date_to:
+                continue
+            if filters.account_id and transaction.account_id != filters.account_id:
+                continue
+            if filters.category and transaction.category.casefold() != filters.category.strip().casefold():
+                continue
+            transactions.append(transaction)
+        return sorted(transactions, key=lambda t: (t.date, t.transaction_id), reverse=True)
+
     # --- reading -------------------------------------------------------------
 
     def _load_receipts(self, receipts_tab: TabData, items_tab: TabData) -> list[Receipt]:
@@ -396,4 +491,78 @@ def _build_receipt(record: Record, item_records: list[Record]) -> Receipt:
         created_at=record.get("created_at", ""),
         updated_at=record.get("updated_at", ""),
         items=items,
+    )
+
+
+# --- bank rows ----------------------------------------------------------------
+
+# Columns the user may edit in the sheet (or the app sets itself); a bank update keeps them.
+USER_FIELDS = frozenset({"kind", "category", "subcategory", "receipt_id", "deleted"})
+KINDS = ("spending", "income", "transfer")
+
+
+def _account_record(account: BankAccount, now: str) -> Record:
+    return {
+        "account_id": account.account_id,
+        "item_id": account.item_id,
+        "institution": account.institution,
+        "name": account.name,
+        "mask": account.mask,
+        "type": account.type,
+        "subtype": account.subtype,
+        "currency": account.currency,
+        "updated_at": now,
+        "deleted": FALSE,
+    }
+
+
+def _build_account(record: Record) -> BankAccount:
+    return BankAccount(
+        account_id=record.get("account_id", ""),
+        item_id=record.get("item_id", ""),
+        institution=record.get("institution", ""),
+        name=record.get("name", ""),
+        mask=record.get("mask", ""),
+        type=record.get("type", ""),
+        subtype=record.get("subtype", ""),
+        currency=(record.get("currency", "").strip().upper() or DEFAULT_CURRENCY),
+    )
+
+
+def _transaction_record(transaction: BankTransaction, now: str) -> Record:
+    return {
+        "transaction_id": transaction.transaction_id,
+        "account_id": transaction.account_id,
+        "date": transaction.date.isoformat(),
+        "merchant": transaction.merchant,
+        "description": transaction.description,
+        "amount": _money(transaction.amount),
+        "currency": transaction.currency,
+        "kind": transaction.kind,
+        "category": transaction.category,
+        "subcategory": transaction.subcategory,
+        "plaid_category": transaction.plaid_category,
+        "pending": TRUE if transaction.pending else FALSE,
+        "receipt_id": transaction.receipt_id,
+        "updated_at": now,
+        "deleted": FALSE,
+    }
+
+
+def _build_transaction(record: Record) -> BankTransaction:
+    kind = record.get("kind", "").strip().lower()
+    return BankTransaction(
+        transaction_id=record.get("transaction_id", ""),
+        account_id=record.get("account_id", ""),
+        date=date.fromisoformat(record.get("date", "").strip()),
+        merchant=record.get("merchant", ""),
+        description=record.get("description", ""),
+        amount=_parse_decimal(record.get("amount", "")),
+        currency=(record.get("currency", "").strip().upper() or DEFAULT_CURRENCY),
+        kind=kind if kind in KINDS else "spending",  # type: ignore[arg-type]
+        category=record.get("category", "").strip(),
+        subcategory=record.get("subcategory", "").strip(),
+        plaid_category=record.get("plaid_category", ""),
+        pending=record.get("pending", "").strip().upper() == TRUE,
+        receipt_id=record.get("receipt_id", "").strip(),
     )

@@ -973,6 +973,58 @@ label {
   color: var(--text-muted);
 }
 
+.bank-note {
+  margin: -4px 0 12px;
+  font-size: 0.82rem;
+}
+
+.bank-items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.bank-item {
+  padding: 10px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.bank-item-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.bank-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0 0 0 52px;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.bank-accounts li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bank-links .notice {
+  max-width: none;
+}
+
+.bank-links > .button {
+  margin-top: 4px;
+}
+
 .categories h2 {
   margin: 0 0 12px;
   color: var(--text-h);
@@ -1092,6 +1144,71 @@ details[open] > summary .category-entry-chevron {
   flex-wrap: wrap;
   gap: 8px;
   margin: 0;
+}
+
+.segmented {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.segment {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.segment-on {
+  background: var(--surface);
+  color: var(--text-h);
+  box-shadow: var(--shadow-sm);
+}
+
+.sync-note {
+  margin: -4px 0 12px;
+  font-size: 0.82rem;
+}
+
+.bank-row .receipt-head {
+  grid-template-columns: auto 1fr auto;
+  cursor: default;
+}
+
+.bank-row-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.bank-row-other .receipt-amount {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.badge.badge-muted {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* Merchant names can be long; let them wrap so the Pending badge stays readable. */
+.bank-row .receipt-store {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .month-group {

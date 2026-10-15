@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
+import { BankLinks } from '../components/BankLinks'
 import { CategoryList } from '../components/CategoryList'
 import { Icon } from '../components/Icon'
 
@@ -59,6 +60,8 @@ export function AccountPage() {
           </Link>
         </li>
       </ul>
+
+      <BankLinks />
 
       <div className="card">
         <CategoryList />

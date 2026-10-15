@@ -42,6 +42,20 @@ class Settings(BaseSettings):
 
     default_currency: str = DEFAULT_CURRENCY
 
+    # Bank and card linking (Plaid). Empty client ID or secret turns the feature off.
+    plaid_client_id: str = ""
+    plaid_secret: str = ""
+    plaid_env: str = "sandbox"  # sandbox | production
+    plaid_country_codes: list[str] = Field(default_factory=lambda: ["CA", "US"])
+    # Encrypted token store (storage stage 3): only Plaid access tokens and sync cursors, no
+    # financial data. TOKEN_ENCRYPTION_KEY is 32 random bytes, base64url-encoded.
+    token_store_path: Path = BACKEND_DIR / "data" / "tokens.sqlite3"
+    token_encryption_key: str = ""
+
+    @property
+    def bank_linking_enabled(self) -> bool:
+        return bool(self.plaid_client_id and self.plaid_secret and self.token_encryption_key)
+
     @property
     def cookie_secure(self) -> bool:
         """Send cookies over HTTPS only, except in local development (plain http://localhost)."""

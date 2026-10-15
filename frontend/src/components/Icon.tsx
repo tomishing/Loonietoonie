@@ -19,6 +19,9 @@ const PATHS = {
   lock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3',
   sparkle: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z',
   send: 'M12 19V5M5 12l7-7 7 7',
+  bank: 'M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18',
+  refresh: 'M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5',
+  card: 'M3 6h18v12H3zM3 10h18M7 15h4',
   tag: 'M3 12V4h8l9 9-8 8zM7.5 8.5h.01',
 } as const
 

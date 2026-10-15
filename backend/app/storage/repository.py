@@ -1,6 +1,15 @@
 from typing import Protocol
 
-from app.storage.models import Category, Receipt, ReceiptDraft, ReceiptFilter
+from app.storage.models import (
+    BankAccount,
+    BankChanges,
+    BankTransaction,
+    BankTransactionFilter,
+    Category,
+    Receipt,
+    ReceiptDraft,
+    ReceiptFilter,
+)
 
 
 class StorageError(Exception):
@@ -46,4 +55,29 @@ class Repository(Protocol):
 
     def delete_receipt(self, receipt_id: str) -> bool:
         """Soft-delete a receipt and its items. Returns False if it does not exist."""
+        ...
+
+    # --- bank and card linking (phase 10) -------------------------------------
+
+    def list_bank_accounts(self) -> list[BankAccount]:
+        """Active linked accounts, in sheet order."""
+        ...
+
+    def save_bank_accounts(self, accounts: list[BankAccount]) -> None:
+        """Add or update accounts by account_id (a re-linked account is undeleted)."""
+        ...
+
+    def remove_bank_accounts(self, item_id: str) -> None:
+        """Soft-delete the accounts of an unlinked item. Their transactions are kept."""
+        ...
+
+    def apply_bank_changes(self, upserts: list[BankTransaction], removed_ids: list[str]) -> BankChanges:
+        """Add new transactions, update known ones, and soft-delete removed ones, deduplicated by
+        transaction_id. On update, the bank's fields change but kind, category, subcategory, and
+        receipt_id (which the user may have edited) are kept.
+        """
+        ...
+
+    def list_bank_transactions(self, filters: BankTransactionFilter) -> list[BankTransaction]:
+        """Active transactions, newest first."""
         ...

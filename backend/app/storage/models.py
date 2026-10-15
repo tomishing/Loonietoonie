@@ -1,6 +1,6 @@
 from datetime import date
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, Field, StringConstraints, field_validator
 
@@ -107,3 +107,48 @@ class ReceiptFilter(BaseModel):
         if self.subcategory and item.subcategory.casefold() != self.subcategory.strip().casefold():
             return False
         return True
+
+
+BankTransactionKind = Literal["spending", "income", "transfer"]
+
+
+class BankAccount(BaseModel):
+    account_id: str
+    item_id: str
+    institution: str
+    name: str
+    mask: str  # last 4 digits, or ""
+    type: str  # depository | credit | loan | investment | other
+    subtype: str
+    currency: str
+
+
+class BankTransaction(BaseModel):
+    transaction_id: str
+    account_id: str
+    date: date
+    merchant: str
+    description: str
+    # > 0 money spent, < 0 refund or money in.
+    amount: Decimal
+    currency: str
+    kind: BankTransactionKind
+    category: str
+    subcategory: str
+    plaid_category: str
+    pending: bool
+    # The receipt that explains this charge (receipt matching, phase 10b). "" for none.
+    receipt_id: str = ""
+
+
+class BankTransactionFilter(BaseModel):
+    date_from: date | None = None
+    date_to: date | None = None
+    account_id: str | None = None
+    category: str | None = None
+
+
+class BankChanges(BaseModel):
+    added: int = 0
+    modified: int = 0
+    removed: int = 0
