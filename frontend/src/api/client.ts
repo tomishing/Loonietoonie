@@ -211,8 +211,25 @@ export function getReceipt(receiptId: string): Promise<Receipt> {
   return apiGet<Receipt>(`/api/receipts/${encodeURIComponent(receiptId)}`)
 }
 
-export function createReceipt(input: ReceiptInput): Promise<Receipt> {
-  return apiPost<Receipt>('/api/receipts', input)
+/** A saved receipt that looks like the same purchase (409 from createReceipt). */
+export interface DuplicateReceipt {
+  receipt_id: string
+  store: string
+  purchased_at: string
+  total: string
+  currency: string
+}
+
+/** The saved receipt behind a 409 "looks like a duplicate" answer, or null for other errors. */
+export function duplicateOf(error: unknown): DuplicateReceipt | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null
+  const detail = error.detail as { duplicate?: DuplicateReceipt } | null
+  return detail?.duplicate ?? null
+}
+
+/** Save a new receipt. Without allowDuplicate, a likely duplicate of a saved one fails with 409. */
+export function createReceipt(input: ReceiptInput, allowDuplicate = false): Promise<Receipt> {
+  return apiPost<Receipt>(`/api/receipts${allowDuplicate ? '?allow_duplicate=true' : ''}`, input)
 }
 
 export function updateReceipt(receiptId: string, input: ReceiptInput): Promise<Receipt> {
@@ -447,6 +464,8 @@ export interface LinkedInstitution {
   item_id: string
   institution: string
   last_synced_at: string
+  /** When Plaid last read the bank (ISO 8601, "" if unknown). */
+  bank_updated_at: string
   accounts: BankAccount[]
 }
 
@@ -468,6 +487,9 @@ export interface ItemSyncResult {
   status: 'ok' | 'needs_relink' | 'error'
   changes: BankChanges
   error: string | null
+  bank_updated_at: string
+  /** This sync asked Plaid to read the bank now; new transactions follow shortly. */
+  refresh_requested: boolean
 }
 
 export interface BankTransaction {
@@ -527,8 +549,9 @@ export function chooseReceipt(transactionId: string, receiptId: string | null): 
   })
 }
 
-export async function syncBanks(): Promise<ItemSyncResult[]> {
-  return (await apiPost<{ items: ItemSyncResult[] }>('/api/bank/sync')).items
+/** Import from linked banks. With refresh, also ask Plaid to read the banks now (at most hourly). */
+export async function syncBanks(refresh = false): Promise<ItemSyncResult[]> {
+  return (await apiPost<{ items: ItemSyncResult[] }>(`/api/bank/sync${refresh ? '?refresh=true' : ''}`)).items
 }
 
 export function listBankTransactions(filters: { from?: string; to?: string; category?: string } = {}): Promise<BankTransaction[]> {

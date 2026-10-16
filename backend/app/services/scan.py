@@ -13,7 +13,8 @@ from decimal import Decimal, InvalidOperation
 from pydantic import BaseModel
 
 from app.ai.receipt_parser import ParsedReceipt, ReceiptImage, ReceiptParser
-from app.storage.models import Category
+from app.services.duplicates import find_duplicates
+from app.storage.models import Category, ReceiptFilter
 from app.storage.repository import Repository
 
 # Amounts may differ from the total by this many of the currency's smallest unit (rounding).
@@ -195,6 +196,28 @@ def validate(draft: ScanDraft, today: date) -> list[ScanIssue]:
     return issues
 
 
+def duplicate_issues(repository: Repository, draft: ScanDraft) -> list[ScanIssue]:
+    """A saved receipt with the same store, date, total, and currency (not blocking)."""
+    if draft.purchased_at is None or draft.total is None or not draft.store:
+        return []
+    same_day = repository.list_receipts(
+        ReceiptFilter(date_from=draft.purchased_at, date_to=draft.purchased_at)
+    )
+    found = find_duplicates(same_day, draft.store, draft.purchased_at, draft.total, draft.currency)
+    if not found:
+        return []
+    saved = found[0]
+    return [
+        ScanIssue(
+            code="possible_duplicate",
+            message=(
+                f"You may have saved this receipt already: {saved.store} on "
+                f"{saved.purchased_at.isoformat()}, {_fmt(saved.total)} {saved.currency}."
+            ),
+        )
+    ]
+
+
 def scan_receipt(
     parser: ReceiptParser,
     repository: Repository,
@@ -212,6 +235,7 @@ def scan_receipt(
     parsed = parser.parse(ocr_text, categories, default_currency, today, images)
     draft, issues = normalize(parsed, categories, default_currency)
     issues += validate(draft, today)
+    issues += duplicate_issues(repository, draft)
     blocking = any(issue.code in BLOCKING_ISSUES for issue in issues)
     return ScanResult(
         draft=draft, issues=issues, needs_image=blocking and not images, used_image=bool(images)

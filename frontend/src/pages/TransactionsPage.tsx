@@ -77,6 +77,8 @@ export function TransactionsPage() {
       ? (categories.categories.find((c) => c.name === category)?.subcategories ?? [])
       : []
 
+  // Bumped after the Sync button ran, to reload the banks' status (last read times).
+  const [bankVersion, setBankVersion] = useState(0)
   useEffect(() => {
     let active = true
     getBankStatus()
@@ -85,7 +87,7 @@ export function TransactionsPage() {
     return () => {
       active = false
     }
-  }, [])
+  }, [bankVersion])
   const hasBanks = bank !== null && bank.enabled && bank.items.length > 0
   const accounts = bank?.items.flatMap((item) => item.accounts) ?? []
 
@@ -252,7 +254,14 @@ export function TransactionsPage() {
       </div>
 
       {view === 'bank' ? (
-        <BankTransactionList month={month} category={category} accounts={accounts} categories={categories} />
+        <BankTransactionList
+          month={month}
+          category={category}
+          accounts={accounts}
+          categories={categories}
+          banks={bank?.items ?? []}
+          onSynced={() => setBankVersion((v) => v + 1)}
+        />
       ) : (
         <>
         {state.status === 'loading' && (

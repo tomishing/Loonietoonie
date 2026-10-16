@@ -3,10 +3,12 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import {
   createReceipt,
   deleteReceipt,
+  duplicateOf,
   errorMessages,
   getReceipt,
   updateReceipt,
   uploadReceiptImage,
+  type DuplicateReceipt,
   type ReceiptInput,
   type ScanIssue,
   type ScanResult,
@@ -14,7 +16,7 @@ import {
 import { useAuth } from '../auth/AuthContext'
 import { useCategories } from '../hooks/useCategories'
 import { formatDecimal, lineTotal, parseDecimal, sum } from '../lib/decimal'
-import { formatMoney, todayIso } from '../lib/format'
+import { formatDate, formatMoney, todayIso } from '../lib/format'
 import type { ScanReviewState } from './ScanPage'
 import type { TransactionsLocationState } from './TransactionsPage'
 
@@ -119,6 +121,8 @@ export function ReceiptFormPage() {
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
+  // A saved receipt that looks like this one (the server asked to confirm before saving twice).
+  const [duplicate, setDuplicate] = useState<DuplicateReceipt | null>(null)
   // "Other…" in the currency dropdown switches to a text box for any 3-letter code.
   const [customCurrency, setCustomCurrency] = useState(false)
   const errorRef = useRef<HTMLDivElement>(null)
@@ -199,7 +203,7 @@ export function ReceiptFormPage() {
     requestAnimationFrame(() => errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
   }
 
-  const handleSubmit = async (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent, allowDuplicate = false) => {
     event.preventDefault()
     const input: ReceiptInput = {
       store: form.store,
@@ -217,8 +221,9 @@ export function ReceiptFormPage() {
     }
     setSaving(true)
     setErrors([])
+    setDuplicate(null)
     try {
-      const saved = isEdit ? await updateReceipt(receiptId, input) : await createReceipt(input)
+      const saved = isEdit ? await updateReceipt(receiptId, input) : await createReceipt(input, allowDuplicate)
       let notice: string | undefined
       if (review) {
         try {
@@ -230,7 +235,13 @@ export function ReceiptFormPage() {
       const state: TransactionsLocationState = { highlight: saved.receipt_id, notice }
       navigate('/transactions', { state })
     } catch (error) {
-      showErrors(errorMessages(error))
+      const saved = duplicateOf(error)
+      if (saved) {
+        setDuplicate(saved)
+        requestAnimationFrame(() => errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+      } else {
+        showErrors(errorMessages(error))
+      }
     } finally {
       setSaving(false)
     }
@@ -265,6 +276,8 @@ export function ReceiptFormPage() {
   }
 
   const currency = form.currency.trim().toUpperCase() || defaultCurrency
+  const looksDuplicate =
+    duplicate !== null || (review?.scan.issues.some((issue) => issue.code === 'possible_duplicate') ?? false)
 
   return (
     <section className="page">
@@ -464,6 +477,27 @@ export function ReceiptFormPage() {
         </div>
 
         <div ref={errorRef}>
+          {duplicate && (
+            <div className="notice notice-warn duplicate-warning" role="alert">
+              <p>
+                <strong>Already saved?</strong> This looks like {duplicate.store} on {formatDate(duplicate.purchased_at)},{' '}
+                {formatMoney(duplicate.total, duplicate.currency)}, which is already in your receipts.
+              </p>
+              <div className="receipt-actions">
+                <Link to={`/receipts/${duplicate.receipt_id}/edit`} className="chip chip-action">
+                  View saved receipt
+                </Link>
+                <button
+                  type="button"
+                  className="chip chip-action"
+                  disabled={saving}
+                  onClick={(event) => void handleSubmit(event, true)}
+                >
+                  Save anyway
+                </button>
+              </div>
+            </div>
+          )}
           {errors.map((message) => (
             <p key={message} className="notice notice-error" role="alert">
               {message}
@@ -472,10 +506,16 @@ export function ReceiptFormPage() {
         </div>
 
         <div className="form-actions">
-          <button type="submit" className="button button-primary" disabled={saving}>
+          {/* While a duplicate warning shows (from the scan, or "Already saved?" after Save), Cancel is
+              the highlighted button, so saving twice takes a deliberate choice. */}
+          <button
+            type="submit"
+            className={`button ${looksDuplicate ? 'button-secondary' : 'button-primary'}`}
+            disabled={saving}
+          >
             {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Save receipt'}
           </button>
-          <Link to="/transactions" className="button button-secondary">
+          <Link to="/transactions" className={`button ${looksDuplicate ? 'button-primary' : 'button-secondary'}`}>
             Cancel
           </Link>
           {isEdit && (

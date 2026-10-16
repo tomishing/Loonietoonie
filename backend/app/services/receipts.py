@@ -3,6 +3,7 @@
 import logging
 from datetime import date, timedelta
 
+from app.services.duplicates import find_duplicates
 from app.services.matching import refresh_matches
 from app.storage.models import Receipt, ReceiptDraft, ReceiptFilter
 from app.storage.repository import Repository, StorageError
@@ -21,6 +22,14 @@ class ReceiptValidationError(Exception):
 
 class ReceiptNotFoundError(Exception):
     pass
+
+
+class DuplicateReceiptError(Exception):
+    """A saved receipt looks like the same purchase (see services/duplicates.py)."""
+
+    def __init__(self, duplicate: Receipt) -> None:
+        super().__init__("Possible duplicate receipt")
+        self.duplicate = duplicate
 
 
 def _error(loc: list[str | int], msg: str) -> dict[str, object]:
@@ -102,8 +111,20 @@ def _rematch(repository: Repository) -> None:
         logger.warning("Receipt matching failed; it will be retried on the next sync", exc_info=True)
 
 
-def create_receipt(repository: Repository, draft: ReceiptDraft) -> Receipt:
-    receipt = repository.create_receipt(_validate(repository, draft, existing=None))
+def create_receipt(repository: Repository, draft: ReceiptDraft, allow_duplicate: bool = False) -> Receipt:
+    """Save a new receipt. A likely duplicate of a saved one raises DuplicateReceiptError unless
+    the user chose to save it anyway (`allow_duplicate`)."""
+    validated = _validate(repository, draft, existing=None)
+    if not allow_duplicate:
+        same_day = repository.list_receipts(
+            ReceiptFilter(date_from=validated.purchased_at, date_to=validated.purchased_at)
+        )
+        found = find_duplicates(
+            same_day, validated.store, validated.purchased_at, validated.total, validated.currency
+        )
+        if found:
+            raise DuplicateReceiptError(found[0])
+    receipt = repository.create_receipt(validated)
     _rematch(repository)
     return receipt
 

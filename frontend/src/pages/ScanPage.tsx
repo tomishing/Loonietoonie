@@ -5,6 +5,7 @@ import { hasDocumentScanner, scanDocument, ScannerUnavailableError } from '../ca
 import { Icon } from '../components/Icon'
 import { prepareImage, stitchImages, toBase64, type PreparedImage } from '../lib/image'
 import { recognizeReceiptParts } from '../ocr'
+import { isPdf, MAX_PDF_PAGES, PdfError, readPdf } from '../capture/pdf'
 
 /** Passed to the review screen (ReceiptFormPage) through router state. */
 export interface ScanReviewState {
@@ -29,6 +30,8 @@ interface Photos {
   pages: PreparedImage[]
   /** The single page, or all pages stitched top to bottom. */
   combined: PreparedImage
+  /** PDF only: each page's embedded text, used instead of OCR where present. */
+  texts?: string[]
 }
 
 function revokePhotos(photos: Photos) {
@@ -54,7 +57,7 @@ export function ScanPage() {
   useEffect(() => () => (rawPreview ? URL.revokeObjectURL(rawPreview) : undefined), [rawPreview])
   useEffect(() => () => void (runRef.current += 1), [])
 
-  const scan = async ({ pages, combined }: Photos, run = ++runRef.current) => {
+  const scan = async ({ pages, combined, texts }: Photos, run = ++runRef.current) => {
     const current = () => run === runRef.current
     const reading = (part: number) => (pages.length > 1 ? `Reading the text (part ${part} of ${pages.length})` : 'Reading the text')
     try {
@@ -64,6 +67,7 @@ export function ScanPage() {
         ({ progress, part }) => {
           if (current()) setStep({ name: 'scanning', stage: reading(part), progress: progress * READING_SHARE })
         },
+        texts,
       )
       if (!current()) return
 
@@ -95,12 +99,37 @@ export function ScanPage() {
   const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
-    if (file) void handlePhotos([file])
+    if (file) void (isPdf(file) ? handlePdf(file) : handlePhotos([file]))
+  }
+
+  /** A PDF receipt: its pages go through the same steps as a multi-page scan. */
+  const handlePdf = async (file: File) => {
+    const run = ++runRef.current
+    setRawPreview(null)
+    setStep({ name: 'scanning', stage: 'Opening the PDF', progress: 0 })
+    try {
+      const pdf = await readPdf(file)
+      if (run !== runRef.current) return
+      if (pdf.pageCount > MAX_PDF_PAGES) {
+        setStep({
+          name: 'error',
+          messages: [
+            `This PDF has ${pdf.pageCount} pages; up to ${MAX_PDF_PAGES} can be read. Save just the receipt's pages as a PDF and try again.`,
+          ],
+        })
+        return
+      }
+      if (pdf.images.length === 0) throw new PdfError('This PDF has no pages.')
+      await handlePhotos(pdf.images, pdf.texts, run)
+    } catch (error) {
+      if (run === runRef.current) {
+        setStep({ name: 'error', messages: [error instanceof PdfError ? error.message : "Couldn't open that PDF."] })
+      }
+    }
   }
 
   /** files: one photo, or the parts of a long receipt from the document scanner (top to bottom). */
-  const handlePhotos = async (files: Blob[]) => {
-    const run = ++runRef.current
+  const handlePhotos = async (files: Blob[], texts?: string[], run = ++runRef.current) => {
     setRawPreview(URL.createObjectURL(files[0]))
     setStep({ name: 'scanning', stage: files.length > 1 ? 'Preparing the photos' : 'Preparing the photo', progress: 0 })
     try {
@@ -108,7 +137,7 @@ export function ScanPage() {
       for (const file of files) pages.push(await prepareImage(file)) // one at a time: less memory
       const combined = pages.length > 1 ? await stitchImages(pages) : pages[0]
       if (run !== runRef.current) return
-      const prepared = { pages, combined }
+      const prepared = { pages, combined, texts }
       setPhotos(prepared)
       void scan(prepared, run)
     } catch {
@@ -157,22 +186,24 @@ export function ScanPage() {
       <input
         ref={galleryRef}
         type="file"
-        accept="image/*"
+        accept="image/*,application/pdf"
         className="sr-only"
         onChange={handleFile}
-        aria-label="Choose a receipt photo"
+        aria-label="Choose a receipt photo or PDF"
       />
     </>
   )
 
   const scanningPreview = rawPreview ?? photos?.combined.previewUrl
-  if (step.name === 'scanning' && scanningPreview) {
+  if (step.name === 'scanning') {
     return (
       <section className="page scanning" aria-busy="true">
-        <div className="scanning-photo">
-          <img src={scanningPreview} alt="Receipt being scanned" />
-          <span className="scan-line" aria-hidden="true" />
-        </div>
+        {scanningPreview && (
+          <div className="scanning-photo">
+            <img src={scanningPreview} alt="Receipt being scanned" />
+            <span className="scan-line" aria-hidden="true" />
+          </div>
+        )}
         <div className="scanning-text" role="status" aria-live="polite">
           <img className="scanning-mascot" src="/favicon.svg" alt="" width={48} height={48} />
           <h1>Scanning your receipt…</h1>
@@ -213,7 +244,7 @@ export function ScanPage() {
             <span className="scan-placeholder-icon">
               <Icon name={canTakePhoto ? 'camera' : 'image'} size={40} />
             </span>
-            <strong>{canTakePhoto ? 'Take a photo of a receipt' : 'Choose a photo of a receipt'}</strong>
+            <strong>{canTakePhoto ? 'Take a photo of a receipt' : 'Choose a photo or PDF of a receipt'}</strong>
             <span className="muted">
               {canTakePhoto
                 ? 'Lay it flat, in good light, with all four corners showing.'
@@ -252,7 +283,7 @@ export function ScanPage() {
             onClick={() => galleryRef.current?.click()}
           >
             <Icon name="image" size={20} />
-            Choose from gallery
+            Choose photo or PDF
           </button>
           <Link to="/receipts/new" className="button button-ghost button-block">
             <Icon name="pencil" size={20} />

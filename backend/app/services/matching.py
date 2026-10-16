@@ -5,11 +5,10 @@ the receipt (with its items) instead of the charge, so the purchase counts once.
 automatic; the user can undo a match (NO_RECEIPT, which is remembered) or pick a receipt by hand.
 """
 
-import re
-import unicodedata
 from dataclasses import dataclass
 from decimal import Decimal
 
+from app.services.names import name_words
 from app.services.scan import tolerance
 from app.storage.models import NO_RECEIPT, BankTransaction, BankTransactionFilter, Receipt, ReceiptFilter
 from app.storage.repository import Repository
@@ -23,22 +22,12 @@ MAX_TIP = Decimal("0.30")
 # How far around a charge the "match a receipt" list looks.
 CANDIDATE_DAYS = 7
 
-_NOISE_WORDS = frozenset(
-    {"the", "inc", "ltd", "store", "stores", "shop", "co", "corp", "com", "www", "pos", "sq"}
-)
-
-
-def _tokens(text: str) -> set[str]:
-    """Words of a store or merchant name, lower-cased and accent-free, without numbers and noise."""
-    plain = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
-    return {word for word in re.split(r"[^a-z]+", plain) if len(word) > 1 and word not in _NOISE_WORDS}
-
 
 def names_match(store: str, transaction: BankTransaction) -> bool:
     """FreshCo ↔ "FRESHCO #1234 TORONTO", Tim Hortons ↔ "TIM HORTONS 0567". Non-Latin store names
     (e.g. Japanese) have no comparable words, so they never count as a name match."""
-    store_words = _tokens(store)
-    return bool(store_words & (_tokens(transaction.merchant) | _tokens(transaction.description)))
+    store_words = name_words(store)
+    return bool(store_words & (name_words(transaction.merchant) | name_words(transaction.description)))
 
 
 def _days_apart(receipt: Receipt, transaction: BankTransaction) -> int:

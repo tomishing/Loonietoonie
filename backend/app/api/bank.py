@@ -114,9 +114,18 @@ def unlink_item(
 
 @router.post("/sync", response_model=service.SyncResult)
 def sync(
-    user: UserDep, repository: RepositoryDep, provider: ProviderDep, store: StoreDep, settings: SettingsDep
+    user: UserDep,
+    repository: RepositoryDep,
+    provider: ProviderDep,
+    store: StoreDep,
+    settings: SettingsDep,
+    refresh: bool = False,
 ) -> service.SyncResult:
-    """Import new, changed, and removed transactions from every linked bank and card."""
+    """Import new, changed, and removed transactions from every linked bank and card.
+
+    `refresh=true` (the Sync button) also asks Plaid to read each bank now, at most once an hour
+    per bank; the new transactions arrive in a sync shortly after.
+    """
     return service.sync_all(
         provider,
         store,
@@ -125,6 +134,7 @@ def sync(
         repository.list_categories(),
         settings.default_currency,
         utc_now_iso(),
+        refresh=refresh,
     )
 
 

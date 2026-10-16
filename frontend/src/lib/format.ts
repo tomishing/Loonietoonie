@@ -43,3 +43,10 @@ export function monthRange(month: string): { from: string; to: string } | null {
   const lastDay = new Date(year, monthNumber, 0).getDate()
   return { from: `${month}-01`, to: `${month}-${String(lastDay).padStart(2, '0')}` }
 }
+
+/** "15 Oct 2026, 3:01 p.m." in the user's locale, from an ISO 8601 timestamp; "" if unreadable. */
+export function formatDateTime(timestamp: string): string {
+  const value = new Date(timestamp)
+  if (Number.isNaN(value.getTime())) return ''
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(value)
+}

@@ -8,24 +8,15 @@ import {
   syncBanks,
   unlinkBank,
   type BankStatus,
-  type ItemSyncResult,
 } from '../api/client'
-import { formatDate } from '../lib/format'
+import { formatDateTime } from '../lib/format'
+import { describeSync, syncWithRefresh, type SyncNotice } from './bankSync'
 import { Icon } from './Icon'
 
 const FIRST_IMPORT_CHECKS = 4
 const FIRST_IMPORT_WAIT_MS = 5000
 
-type Notice = { tone: 'ok' | 'warn' | 'error'; text: string } | null
-
-function describeSync(results: ItemSyncResult[]): Notice {
-  const relink = results.filter((r) => r.status === 'needs_relink').map((r) => r.institution || 'A bank')
-  const failed = results.filter((r) => r.status === 'error').map((r) => r.institution || 'A bank')
-  if (relink.length) return { tone: 'warn', text: `${relink.join(', ')} needs you to unlink it and link it again.` }
-  if (failed.length) return { tone: 'error', text: `Couldn't update ${failed.join(', ')}. Try again later.` }
-  const added = results.reduce((sum, r) => sum + r.changes.added, 0)
-  return { tone: 'ok', text: added ? `Imported ${added} new transaction${added === 1 ? '' : 's'}.` : 'Everything is up to date.' }
-}
+type Notice = SyncNotice | null
 
 /** Opens Plaid Link as soon as the script has loaded. Mounted only while linking. */
 function PlaidLinkOpener({
@@ -94,7 +85,7 @@ export function BankLinks() {
       const imported = results.some((r) => r.changes.added > 0)
       setNotice(
         imported || result.status !== 'ok'
-          ? describeSync(results)
+          ? describeSync({ results, added: results.reduce((sum, r) => sum + r.changes.added, 0), asked: [] })
           : {
               tone: 'ok',
               text: `${result.institution || 'Your bank'} is linked. Its transactions can take a few minutes to arrive; tap Sync now later.`,
@@ -112,7 +103,7 @@ export function BankLinks() {
     setNotice(null)
     setBusy('Updating…')
     try {
-      setNotice(describeSync(await syncBanks()))
+      setNotice(describeSync(await syncWithRefresh(setBusy)))
     } catch (error) {
       setNotice({ tone: 'error', text: errorMessages(error).join(' ') })
     } finally {
@@ -187,7 +178,11 @@ export function BankLinks() {
                 <span className="menu-text">
                   {item.institution || 'Linked bank'}
                   <span className="muted">
-                    {item.last_synced_at ? `Updated ${formatDate(item.last_synced_at.slice(0, 10))}` : 'Not synced yet'}
+                    {item.bank_updated_at
+                      ? `Bank last read ${formatDateTime(item.bank_updated_at)}`
+                      : item.last_synced_at
+                        ? `Synced ${formatDateTime(item.last_synced_at)}`
+                        : 'Not synced yet'}
                   </span>
                 </span>
                 <button

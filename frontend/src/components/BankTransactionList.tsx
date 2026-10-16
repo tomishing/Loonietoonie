@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { errorMessages, listBankTransactions, syncBanks, type BankAccount, type BankTransaction } from '../api/client'
+import {
+  errorMessages,
+  listBankTransactions,
+  syncBanks,
+  type BankAccount,
+  type BankTransaction,
+  type LinkedInstitution,
+} from '../api/client'
+import { describeSync, syncWithRefresh, type SyncNotice } from './bankSync'
 import { categoryIcon, type CategoriesState } from '../hooks/useCategories'
 import { formatDecimal, parseDecimal } from '../lib/decimal'
-import { formatDate, formatMoney, formatMonth, monthRange } from '../lib/format'
+import { formatDate, formatDateTime, formatMoney, formatMonth, monthRange } from '../lib/format'
 import { Icon } from './Icon'
 import { ReceiptMatch } from './ReceiptMatch'
 
@@ -36,12 +44,21 @@ export function BankTransactionList({
   category,
   accounts,
   categories,
+  banks,
+  onSynced,
 }: {
   month: string
   category: string
   accounts: BankAccount[]
   categories: CategoriesState
+  /** Linked banks, for "last read" times. */
+  banks: LinkedInstitution[]
+  /** Called after the Sync button ran (e.g. to reload the banks' status). */
+  onSynced: () => void
 }) {
+  // The Sync button: what it is doing now, and what it found.
+  const [busy, setBusy] = useState<string | null>(null)
+  const [notice, setNotice] = useState<SyncNotice | null>(null)
   // Bumped after a match changes, to reload the list.
   const [version, setVersion] = useState(0)
   const reload = () => setVersion((v) => v + 1)
@@ -84,17 +101,67 @@ export function BankTransactionList({
     return account.mask ? `${account.name} •• ${account.mask}` : account.name
   }
 
+  const runSync = async () => {
+    setNotice(null)
+    setBusy('Syncing with your banks…')
+    try {
+      setNotice(describeSync(await syncWithRefresh(setBusy)))
+      reload()
+      onSynced()
+    } catch (error) {
+      setNotice({ tone: 'error', text: errorMessages(error).join(' ') })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const lastRead = banks
+    .filter((bank) => bank.bank_updated_at)
+    .map((bank) => `${bank.institution || 'Bank'} ${formatDateTime(bank.bank_updated_at)}`)
+    .join(' · ')
+
+  const bar = (
+    <>
+      <div className="bank-sync-bar">
+        <span className="muted">{lastRead ? `Last read from the bank: ${lastRead}` : 'Card and bank transactions'}</span>
+        <button
+          type="button"
+          className="chip chip-action"
+          onClick={() => void runSync()}
+          disabled={busy !== null || syncing}
+        >
+          <Icon name="refresh" size={16} />
+          Sync
+        </button>
+      </div>
+      {(busy || syncing) && (
+        <p className="muted sync-note" role="status">
+          {busy ?? 'Checking your banks for new transactions…'}
+        </p>
+      )}
+      {notice && (
+        <p className={`notice notice-${notice.tone} sync-notice`} role={notice.tone === 'error' ? 'alert' : 'status'}>
+          {notice.text}
+        </p>
+      )}
+    </>
+  )
+
   if (state.status === 'loading') {
     return (
+      <>
+        {bar}
       <div aria-hidden="true">
         <div className="skeleton skeleton-row" />
         <div className="skeleton skeleton-row" />
       </div>
+      </>
     )
   }
   if (state.status === 'error') {
     return (
       <>
+        {bar}
         {state.messages.map((message) => (
           <p key={message} className="notice notice-error" role="alert">
             {message}
@@ -107,11 +174,7 @@ export function BankTransactionList({
   const { transactions } = state
   return (
     <>
-      {syncing && (
-        <p className="muted sync-note" role="status">
-          Checking your banks for new transactions…
-        </p>
-      )}
+      {bar}
       {transactions.length === 0 ? (
         <div className="card empty">
           <Icon name="bank" size={40} />

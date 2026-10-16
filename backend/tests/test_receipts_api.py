@@ -164,7 +164,7 @@ def test_update_receipt(client: TestClient) -> None:
 
 def test_update_rejects_item_from_another_receipt(client: TestClient) -> None:
     first = client.post("/api/receipts", json=body()).json()
-    second = client.post("/api/receipts", json=body()).json()
+    second = client.post("/api/receipts", json=body(), params={"allow_duplicate": "true"}).json()
     foreign = first["items"][0]
 
     response = client.put(f"/api/receipts/{second['receipt_id']}", json=body(items=[foreign]))
@@ -269,3 +269,22 @@ def test_edit_keeps_a_subcategory_that_was_renamed_since() -> None:
     assert kept.status_code == 200
     assert kept.json()["items"][0]["subcategory"] == "Dairy & Eggs"
     assert new_item.status_code == 422  # a new item must use a listed subcategory
+
+
+def test_duplicate_receipt_needs_confirmation(client: TestClient) -> None:
+    first = client.post("/api/receipts", json=body()).json()
+
+    again = client.post("/api/receipts", json=body(store="FRESHMART #12"))  # same store, date, total
+    assert again.status_code == 409
+    assert again.json()["detail"]["duplicate"] == {
+        "receipt_id": first["receipt_id"],
+        "store": "FreshMart",
+        "purchased_at": "2026-10-01",
+        "total": "7.47",
+        "currency": "USD",
+    }
+    other_day = client.post("/api/receipts", json=body(purchased_at="2026-10-02"))
+    assert other_day.status_code == 201
+    anyway = client.post("/api/receipts", json=body(), params={"allow_duplicate": "true"})
+    assert anyway.status_code == 201
+    assert len(client.get("/api/receipts").json()) == 3

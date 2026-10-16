@@ -32,6 +32,8 @@ export default defineConfig(({ mode }) => {
         workbox: {
           // API responses are never served from the service worker cache.
           navigateFallbackDenylist: [/^\/api\//],
+          // pdf.js (1.2 MB) loads only when someone opens a PDF receipt; don't cache it for everyone.
+          globIgnores: ['**/pdf.worker*', '**/pdf-*.js'],
         },
         devOptions: { enabled: false },
       }),

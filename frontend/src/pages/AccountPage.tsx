@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { useNavigate } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
 import { BankLinks } from '../components/BankLinks'
@@ -46,18 +46,6 @@ export function AccountPage() {
             </span>
             <Icon name="external" size={18} className="menu-chevron" />
           </a>
-        </li>
-        <li>
-          <Link className="menu-row" to="/receipts/new">
-            <span className="menu-icon">
-              <Icon name="pencil" />
-            </span>
-            <span className="menu-text">
-              Enter a receipt by hand
-              <span className="muted">For receipts you can't scan</span>
-            </span>
-            <Icon name="right" size={18} className="menu-chevron" />
-          </Link>
         </li>
       </ul>
 

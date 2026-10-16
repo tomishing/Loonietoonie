@@ -13,8 +13,14 @@ CATEGORY_LIST = [Category(name=name, icon="") for name in CATEGORIES]
 
 
 class FakeRepository:
+    def __init__(self, receipts: list[object] | None = None) -> None:
+        self.receipts = receipts or []
+
     def list_categories(self) -> list[Category]:
         return CATEGORY_LIST
+
+    def list_receipts(self, filters: object) -> list[object]:
+        return self.receipts
 
 
 class FakeParser:
@@ -248,3 +254,16 @@ def test_subcategory_is_kept_only_when_it_belongs_to_the_category() -> None:
         ("Other", None),
         ("Groceries", None),
     ]
+
+
+def test_saved_receipt_with_the_same_store_date_and_total_is_flagged() -> None:
+    from tests.test_summary import receipt as saved_receipt
+
+    saved = saved_receipt("2026-10-05", "セブンイレブン", [("おにぎり", "4.00", "Groceries")], currency="CAD")
+    parsed = receipt("4.00", [item("おにぎり", "4.00")], store="セブン-イレブン", purchased_at="2026-10-05")
+
+    result = scan_receipt(FakeParser(parsed), FakeRepository([saved]), "t", [], "CAD", TODAY)
+
+    duplicate = next(i for i in result.issues if i.code == "possible_duplicate")
+    assert "2026-10-05" in duplicate.message
+    assert result.needs_image is False  # a warning, not a reason to send the photo

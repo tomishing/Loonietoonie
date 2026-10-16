@@ -255,7 +255,7 @@ class SheetsRepository:
             row = by_id.get(account.account_id)
             if row is None:
                 new_records.append(record)
-            else:
+            elif any(row.values.get(k, "") != v for k, v in record.items() if k != "updated_at"):
                 writes.append(("bank_accounts", _with_values(row, tab.headers, record)))
         self._write_rows(writes)
         self._append("bank_accounts", tab.headers, new_records)
@@ -292,8 +292,10 @@ class SheetsRepository:
                 bank_fields = {
                     k: v for k, v in _transaction_record(transaction, now).items() if k not in USER_FIELDS
                 }
-                writes.append(("bank_transactions", _with_values(row, tab.headers, bank_fields)))
-                changes.modified += 1
+                # Unchanged rows aren't rewritten (a full re-import would otherwise rewrite them all).
+                if any(row.values.get(k, "") != v for k, v in bank_fields.items() if k != "updated_at"):
+                    writes.append(("bank_transactions", _with_values(row, tab.headers, bank_fields)))
+                    changes.modified += 1
         deleted = {"deleted": TRUE, "updated_at": now}
         for transaction_id in removed_ids:
             row = by_id.get(transaction_id)

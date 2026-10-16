@@ -37,13 +37,26 @@ export function joinParts(texts: string[]): string {
   return texts.map((text, index) => `--- part ${index + 1} of ${texts.length} ---\n${text.trim()}`).join('\n')
 }
 
-/** recognizeReceipt() for each part of a receipt, in order; progress covers all parts. */
+// A PDF page with at least this much embedded text is read from the text, not by OCR.
+const MIN_EMBEDDED_TEXT = 20
+
+/**
+ * recognizeReceipt() for each part of a receipt, in order; progress covers all parts.
+ * `embeddedTexts` (PDF pages) are used instead of OCR for pages that have real text.
+ */
 export async function recognizeReceiptParts(
   images: Blob[],
   onProgress?: (progress: OcrProgress & { part: number }) => void,
+  embeddedTexts?: string[],
 ): Promise<OcrResult> {
   const texts: string[] = []
   for (const [index, image] of images.entries()) {
+    const embedded = embeddedTexts?.[index]?.trim() ?? ''
+    if (embedded.length >= MIN_EMBEDDED_TEXT) {
+      texts.push(embedded)
+      onProgress?.({ progress: (index + 1) / images.length, stage: 'Reading the text', part: index + 1 })
+      continue
+    }
     const { text } = await recognizeReceipt(image, ({ progress, stage }) =>
       onProgress?.({ progress: (index + progress) / images.length, stage, part: index + 1 }),
     )

@@ -1178,6 +1178,32 @@ details[open] > summary .category-entry-chevron {
   box-shadow: var(--shadow-sm);
 }
 
+.bank-sync-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.bank-sync-bar .muted {
+  font-size: 0.82rem;
+}
+
+.bank-sync-bar .chip-action {
+  flex: none;
+  border: none;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sync-notice {
+  max-width: none;
+  margin: 0 0 12px;
+}
+
 .sync-note {
   margin: -4px 0 12px;
   font-size: 0.82rem;
@@ -1506,6 +1532,21 @@ details[open] .receipt-toggle {
   margin: 0 -16px;
   padding: 16px 16px 12px;
   background: linear-gradient(rgba(247, 244, 246, 0), var(--bg) 35%);
+}
+
+.duplicate-warning {
+  max-width: none;
+}
+
+.duplicate-warning .receipt-actions {
+  padding: 8px 0 0;
+}
+
+.duplicate-warning .chip-action {
+  border: none;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
 }
 
 .form-actions .button-danger {

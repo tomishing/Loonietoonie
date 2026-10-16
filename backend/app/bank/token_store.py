@@ -31,7 +31,10 @@ CREATE TABLE IF NOT EXISTS plaid_items (
     access_token BLOB NOT NULL,
     cursor TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
-    last_synced_at TEXT NOT NULL DEFAULT ''
+    last_synced_at TEXT NOT NULL DEFAULT '',
+    data_version INTEGER NOT NULL DEFAULT 1,
+    bank_updated_at TEXT NOT NULL DEFAULT '',
+    refreshed_at TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS plaid_items_user ON plaid_items (user_id);
 """
@@ -51,6 +54,20 @@ class LinkedItem:
     cursor: str
     created_at: str
     last_synced_at: str
+    # How the item's transactions were imported; older versions are re-imported once (bank service).
+    data_version: int = 1
+    # When Plaid last read the bank successfully (Plaid's item status), and when we last asked
+    # Plaid to read it right away (/transactions/refresh).
+    bank_updated_at: str = ""
+    refreshed_at: str = ""
+
+
+# Columns added after the first release of the table (added on start, existing rows get the default).
+ADDED_COLUMNS = {
+    "data_version": "INTEGER NOT NULL DEFAULT 1",
+    "bank_updated_at": "TEXT NOT NULL DEFAULT ''",
+    "refreshed_at": "TEXT NOT NULL DEFAULT ''",
+}
 
 
 class TokenStore(Protocol):
@@ -68,7 +85,17 @@ class TokenStore(Protocol):
         """The user's linked items, oldest first, with decrypted access tokens."""
         ...
 
-    def save_cursor(self, user_id: str, item_id: str, cursor: str, synced_at: str) -> None: ...
+    def save_cursor(
+        self,
+        user_id: str,
+        item_id: str,
+        cursor: str,
+        synced_at: str,
+        data_version: int | None = None,
+        bank_updated_at: str | None = None,
+    ) -> None: ...
+
+    def mark_refreshed(self, user_id: str, item_id: str, at: str) -> None: ...
 
     def delete_item(self, user_id: str, item_id: str) -> bool: ...
 
@@ -92,6 +119,10 @@ class SqliteTokenStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.executescript(SCHEMA)
+            existing = {row[1] for row in connection.execute("PRAGMA table_info(plaid_items)")}
+            for column, definition in ADDED_COLUMNS.items():
+                if column not in existing:
+                    connection.execute(f"ALTER TABLE plaid_items ADD COLUMN {column} {definition}")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -144,7 +175,8 @@ class SqliteTokenStore:
         with self._lock, self._connect() as connection:
             rows = connection.execute(
                 "SELECT item_id, institution_id, institution_name, access_token, cursor, created_at,"
-                " last_synced_at FROM plaid_items WHERE user_id = ? ORDER BY created_at, item_id",
+                " last_synced_at, data_version, bank_updated_at, refreshed_at"
+                " FROM plaid_items WHERE user_id = ? ORDER BY created_at, item_id",
                 (user_id,),
             ).fetchall()
         return [
@@ -157,15 +189,46 @@ class SqliteTokenStore:
                 cursor=cursor,
                 created_at=created_at,
                 last_synced_at=last_synced_at,
+                data_version=data_version,
+                bank_updated_at=bank_updated_at,
+                refreshed_at=refreshed_at,
             )
-            for item_id, institution_id, institution_name, blob, cursor, created_at, last_synced_at in rows
+            for (
+                item_id,
+                institution_id,
+                institution_name,
+                blob,
+                cursor,
+                created_at,
+                last_synced_at,
+                data_version,
+                bank_updated_at,
+                refreshed_at,
+            ) in rows
         ]
 
-    def save_cursor(self, user_id: str, item_id: str, cursor: str, synced_at: str) -> None:
+    def save_cursor(
+        self,
+        user_id: str,
+        item_id: str,
+        cursor: str,
+        synced_at: str,
+        data_version: int | None = None,
+        bank_updated_at: str | None = None,
+    ) -> None:
         with self._lock, self._connect() as connection:
             connection.execute(
-                "UPDATE plaid_items SET cursor = ?, last_synced_at = ? WHERE item_id = ? AND user_id = ?",
-                (cursor, synced_at, item_id, user_id),
+                "UPDATE plaid_items SET cursor = ?, last_synced_at = ?,"
+                " data_version = COALESCE(?, data_version), bank_updated_at = COALESCE(?, bank_updated_at)"
+                " WHERE item_id = ? AND user_id = ?",
+                (cursor, synced_at, data_version, bank_updated_at, item_id, user_id),
+            )
+
+    def mark_refreshed(self, user_id: str, item_id: str, at: str) -> None:
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                "UPDATE plaid_items SET refreshed_at = ? WHERE item_id = ? AND user_id = ?",
+                (at, item_id, user_id),
             )
 
     def delete_item(self, user_id: str, item_id: str) -> bool:

@@ -7,6 +7,7 @@ succeeds; a failed sync is simply repeated, and transaction IDs prevent duplicat
 
 import threading
 from collections import defaultdict
+from datetime import datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel
@@ -26,6 +27,14 @@ RELINK_CODES = frozenset({"ITEM_LOGIN_REQUIRED", "PENDING_EXPIRATION", "PENDING_
 
 ItemStatus = Literal["ok", "needs_relink", "error"]
 
+# Bump when the way transactions are imported changes; items synced with an older version are
+# re-imported once from the start (their rows are updated in place by transaction_id).
+# 2: the date is the purchase date (Plaid authorized_date), not the posting date.
+DATA_VERSION = 2
+# "Sync" also asks Plaid to read the bank right away, at most this often per bank (Plaid bills
+# /transactions/refresh per request outside the Trial plan).
+REFRESH_INTERVAL = timedelta(hours=1)
+
 _user_locks: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
 
 
@@ -37,6 +46,8 @@ class LinkedInstitution(BaseModel):
     item_id: str
     institution: str
     last_synced_at: str
+    # When Plaid last read the bank (new transactions can't arrive before Plaid reads it again).
+    bank_updated_at: str
     accounts: list[BankAccount]
 
 
@@ -46,6 +57,9 @@ class ItemSyncResult(BaseModel):
     status: ItemStatus
     changes: BankChanges = BankChanges()
     error: str | None = None
+    bank_updated_at: str = ""
+    # True when this sync asked Plaid to read the bank now; new transactions follow shortly.
+    refresh_requested: bool = False
 
 
 class SyncResult(BaseModel):
@@ -62,7 +76,8 @@ def to_transaction(
     return BankTransaction(
         transaction_id=plaid.transaction_id,
         account_id=plaid.account_id,
-        date=plaid.date,
+        # The purchase date, as banks and card statements show it; the posting date can be days later.
+        date=plaid.authorized_date or plaid.date,
         merchant=(plaid.merchant_name or "").strip(),
         description=plaid.name.strip(),
         amount=plaid.amount,
@@ -124,6 +139,7 @@ def list_linked(store: TokenStore, repository: Repository, user_id: str) -> list
             item_id=item.item_id,
             institution=item.institution_name,
             last_synced_at=item.last_synced_at,
+            bank_updated_at=item.bank_updated_at,
             accounts=[account for account in accounts if account.item_id == item.item_id],
         )
         for item in store.list_items(user_id)
@@ -162,15 +178,37 @@ def sync_all(
     categories: list[Category],
     default_currency: str,
     now: str,
+    refresh: bool = False,
 ) -> SyncResult:
-    """Import new, changed, and removed transactions for each of the user's linked items."""
+    """Import new, changed, and removed transactions for each of the user's linked items.
+
+    With `refresh`, also ask Plaid to read each bank right away (at most once per
+    REFRESH_INTERVAL per bank). Plaid reads it in the background, so the new transactions
+    arrive in a later sync, usually within a minute.
+    """
     with _user_locks[user_id]:  # two syncs at once could append the same new rows twice
-        results = [
-            _sync_item(provider, store, repository, item, categories, default_currency, now)
-            for item in store.list_items(user_id)
-        ]
+        results = []
+        for item in store.list_items(user_id):
+            requested = refresh and _request_refresh(provider, store, item, now)
+            result = _sync_item(provider, store, repository, item, categories, default_currency, now)
+            results.append(result.model_copy(update={"refresh_requested": requested}))
         refresh_matches(repository)  # new charges may match receipts already saved
         return SyncResult(items=results)
+
+
+def _request_refresh(provider: BankProvider, store: TokenStore, item: LinkedItem, now: str) -> bool:
+    if item.refreshed_at and _parse(now) - _parse(item.refreshed_at) < REFRESH_INTERVAL:
+        return False
+    try:
+        provider.refresh_transactions(item.access_token)
+    except PlaidError:
+        return False  # the sync below reports problems with the item
+    store.mark_refreshed(item.user_id, item.item_id, now)
+    return True
+
+
+def _parse(timestamp: str) -> datetime:
+    return datetime.fromisoformat(timestamp)
 
 
 def _sync_item(
@@ -182,9 +220,11 @@ def _sync_item(
     default_currency: str,
     now: str,
 ) -> ItemSyncResult:
+    # An item imported the old way is read again from the start; rows are updated in place.
+    start = item.cursor if item.data_version >= DATA_VERSION else ""
     try:
         repository.save_bank_accounts(to_accounts(provider, item, default_currency))
-        pages = _collect_pages(provider, item)
+        pages = _collect_pages(provider, item.access_token, start)
         upserts = [
             to_transaction(t, categories, default_currency)
             for page in pages
@@ -192,25 +232,36 @@ def _sync_item(
         ]
         removed = [transaction_id for page in pages for transaction_id in page.removed]
         changes = repository.apply_bank_changes(upserts, removed)
+        bank_updated_at = provider.bank_updated_at(item.access_token)
     except PlaidError as exc:
         status: ItemStatus = "needs_relink" if exc.code in RELINK_CODES else "error"
         return ItemSyncResult(
-            item_id=item.item_id, institution=item.institution_name, status=status, error=exc.code
+            item_id=item.item_id,
+            institution=item.institution_name,
+            status=status,
+            error=exc.code,
+            bank_updated_at=item.bank_updated_at,
         )
-    store.save_cursor(item.user_id, item.item_id, pages[-1].next_cursor, now)
+    store.save_cursor(
+        item.user_id, item.item_id, pages[-1].next_cursor, now, DATA_VERSION, bank_updated_at or None
+    )
     return ItemSyncResult(
-        item_id=item.item_id, institution=item.institution_name, status="ok", changes=changes
+        item_id=item.item_id,
+        institution=item.institution_name,
+        status="ok",
+        changes=changes,
+        bank_updated_at=bank_updated_at or item.bank_updated_at,
     )
 
 
-def _collect_pages(provider: BankProvider, item: LinkedItem) -> list[SyncPage]:
-    """All pages since the saved cursor. Restarts from it if Plaid reports a mid-sync change."""
+def _collect_pages(provider: BankProvider, access_token: str, start: str) -> list[SyncPage]:
+    """All pages from the `start` cursor. Restarts from it if Plaid reports a mid-sync change."""
     for attempt in range(MAX_SYNC_ATTEMPTS):
         pages: list[SyncPage] = []
-        cursor = item.cursor
+        cursor = start
         try:
             while True:
-                page = provider.sync_transactions(item.access_token, cursor)
+                page = provider.sync_transactions(access_token, cursor)
                 pages.append(page)
                 cursor = page.next_cursor
                 if not page.has_more:

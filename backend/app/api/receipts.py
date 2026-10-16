@@ -39,11 +39,30 @@ def list_receipts(
 
 
 @router.post("", response_model=Receipt, status_code=status.HTTP_201_CREATED)
-def create_receipt(draft: ReceiptDraft, repository: RepositoryDep, settings: SettingsDep) -> Receipt:
+def create_receipt(
+    draft: ReceiptDraft, repository: RepositoryDep, settings: SettingsDep, allow_duplicate: bool = False
+) -> Receipt:
+    """Save a receipt. 409 when a saved receipt looks like the same purchase (same store, date,
+    total, and currency); `detail.duplicate` describes it. `allow_duplicate=true` saves anyway."""
     try:
-        return service.create_receipt(repository, _with_default_currency(draft, settings))
+        return service.create_receipt(repository, _with_default_currency(draft, settings), allow_duplicate)
     except service.ReceiptValidationError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.errors) from exc
+    except service.DuplicateReceiptError as exc:
+        d = exc.duplicate
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={
+                "message": "This looks like a receipt you already saved.",
+                "duplicate": {
+                    "receipt_id": d.receipt_id,
+                    "store": d.store,
+                    "purchased_at": d.purchased_at.isoformat(),
+                    "total": format(d.total, "f"),
+                    "currency": d.currency,
+                },
+            },
+        ) from exc
 
 
 @router.get("/{receipt_id}", response_model=Receipt)

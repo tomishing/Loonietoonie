@@ -53,6 +53,7 @@ def plaid_tx(
     day: int = 5,
     pending: bool = False,
     name: str = "FRESHCO #123",
+    authorized_day: int | None = None,
 ) -> PlaidTransaction:
     return PlaidTransaction(
         transaction_id=transaction_id,
@@ -60,6 +61,7 @@ def plaid_tx(
         amount=Decimal(amount),
         iso_currency_code="CAD",
         date=date(2026, 10, day),
+        authorized_date=date(2026, 10, authorized_day) if authorized_day else None,
         name=name,
         merchant_name="FreshCo",
         pending=pending,
@@ -105,6 +107,12 @@ class FakeProvider:
 
     def remove_item(self, access_token: str) -> None:
         self.removed.append(access_token)
+
+    def refresh_transactions(self, access_token: str) -> None:
+        self.calls.append(("refresh", access_token))
+
+    def bank_updated_at(self, access_token: str) -> str:
+        return "2026-10-15T19:01:58Z"
 
 
 @pytest.fixture
@@ -401,3 +409,102 @@ def test_bank_api_requires_sign_in() -> None:
     with TestClient(app) as http:
         assert http.get("/api/bank/items").status_code == 401
     app.dependency_overrides.clear()
+
+
+# --- purchase dates, re-import, refresh (2026-10-16) ------------------------------
+
+
+def test_the_purchase_date_is_used_not_the_posting_date(
+    store: SqliteTokenStore, repository: SheetsRepository
+) -> None:
+    provider = FakeProvider()
+    provider.pages[""] = [
+        SyncPage(added=[plaid_tx("t1", "9.99", day=8, authorized_day=3)], next_cursor="c1", has_more=False)
+    ]
+
+    link(provider, store, repository)
+
+    [t1] = repository.list_bank_transactions(BankTransactionFilter())
+    assert t1.date == date(2026, 10, 3)
+    assert store.list_items(USER)[0].bank_updated_at == "2026-10-15T19:01:58Z"
+
+
+def test_items_imported_the_old_way_are_reimported_once(
+    store: SqliteTokenStore, repository: SheetsRepository
+) -> None:
+    provider = FakeProvider()
+    provider.pages[""] = [SyncPage(added=[plaid_tx("t1", "9.99", day=8)], next_cursor="c1", has_more=False)]
+    link(provider, store, repository)
+    # As if imported before purchase dates: version 1, posting date in the sheet.
+    store.save_cursor(USER, "item-1", "c1", NOW, data_version=1)
+    provider.pages[""] = [
+        SyncPage(added=[plaid_tx("t1", "9.99", day=8, authorized_day=3)], next_cursor="c2", has_more=False)
+    ]
+    provider.calls.clear()
+
+    service.sync_all(provider, store, repository, USER, CATEGORIES, "CAD", NOW)
+    service.sync_all(provider, store, repository, USER, CATEGORIES, "CAD", NOW)
+
+    assert provider.calls == [("sync", ""), ("sync", "c2")]  # from the start once, then incremental
+    [t1] = repository.list_bank_transactions(BankTransactionFilter())
+    assert t1.date == date(2026, 10, 3)  # corrected in place, not duplicated
+    assert store.list_items(USER)[0].data_version == service.DATA_VERSION
+
+
+def test_sync_button_asks_plaid_to_read_the_bank_at_most_hourly(
+    store: SqliteTokenStore, repository: SheetsRepository
+) -> None:
+    provider = FakeProvider()
+    link(provider, store, repository)
+
+    first = service.sync_all(
+        provider, store, repository, USER, CATEGORIES, "CAD", "2026-10-16T10:00:00Z", True
+    )
+    soon = service.sync_all(
+        provider, store, repository, USER, CATEGORIES, "CAD", "2026-10-16T10:30:00Z", True
+    )
+    later = service.sync_all(
+        provider, store, repository, USER, CATEGORIES, "CAD", "2026-10-16T11:05:00Z", True
+    )
+    plain = service.sync_all(provider, store, repository, USER, CATEGORIES, "CAD", "2026-10-16T13:00:00Z")
+
+    assert [r.items[0].refresh_requested for r in (first, soon, later, plain)] == [True, False, True, False]
+    assert [c for c in provider.calls if c[0] == "refresh"] == [("refresh", "access-sandbox-secret")] * 2
+    assert first.items[0].bank_updated_at == "2026-10-15T19:01:58Z"
+
+
+def test_token_store_from_before_the_new_columns_is_upgraded(tmp_path: Path) -> None:
+    path = tmp_path / "tokens.sqlite3"
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """CREATE TABLE plaid_items (item_id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+            institution_id TEXT NOT NULL DEFAULT '', institution_name TEXT NOT NULL DEFAULT '',
+            access_token BLOB NOT NULL, cursor TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL,
+            last_synced_at TEXT NOT NULL DEFAULT '');
+            INSERT INTO plaid_items (item_id, user_id, institution_name, access_token, cursor, created_at)
+            VALUES ('item-1', 'u', 'CIBC', x'00', 'c9', '2026-10-15T00:00:00Z');"""
+        )
+
+    SqliteTokenStore(path, key())
+
+    with sqlite3.connect(path) as connection:
+        row = connection.execute(
+            "SELECT institution_name, cursor, data_version, bank_updated_at, refreshed_at FROM plaid_items"
+        ).fetchone()
+    assert row == ("CIBC", "c9", 1, "", "")  # kept, with defaults for the new columns
+
+
+def test_unchanged_transactions_are_not_rewritten(
+    store: SqliteTokenStore, repository: SheetsRepository
+) -> None:
+    provider = FakeProvider()
+    provider.pages[""] = [SyncPage(added=[plaid_tx("t1", "9.99")], next_cursor="c1", has_more=False)]
+    link(provider, store, repository)
+    provider.pages["c1"] = [SyncPage(modified=[plaid_tx("t1", "9.99")], next_cursor="c2", has_more=False)]
+    api = repository._api  # type: ignore[attr-defined]
+    writes_before = api.calls.count("write_values")
+
+    [item] = service.sync_all(provider, store, repository, USER, CATEGORIES, "CAD", NOW).items
+
+    assert item.changes.modified == 0
+    assert api.calls.count("write_values") == writes_before

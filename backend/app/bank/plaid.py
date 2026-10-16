@@ -96,6 +96,15 @@ class BankProvider(Protocol):
 
     def remove_item(self, access_token: str) -> None: ...
 
+    def refresh_transactions(self, access_token: str) -> None:
+        """Ask Plaid to read the bank now (it finishes in the background). Billed per request
+        outside the Trial plan."""
+        ...
+
+    def bank_updated_at(self, access_token: str) -> str:
+        """When Plaid last read the bank's transactions successfully (ISO 8601), or ""."""
+        ...
+
 
 class PlaidClient:
     def __init__(self, client_id: str, secret: str, env: str, country_codes: list[str]) -> None:
@@ -182,3 +191,10 @@ class PlaidClient:
 
     def remove_item(self, access_token: str) -> None:
         self._post("/item/remove", {"access_token": access_token})
+
+    def refresh_transactions(self, access_token: str) -> None:
+        self._post("/transactions/refresh", {"access_token": access_token})
+
+    def bank_updated_at(self, access_token: str) -> str:
+        status = self._post("/item/get", {"access_token": access_token}).get("status") or {}
+        return str((status.get("transactions") or {}).get("last_successful_update") or "")
