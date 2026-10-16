@@ -41,9 +41,10 @@ ItemStatus = Literal["ok", "needs_relink", "error"]
 # 3: the merchant is Plaid's name only when it agrees with the bank's text (services/names.py).
 # 4: Plaid's travel categories map to Travel; charges imported as Transportation are moved once.
 # 5: gyms and sporting goods map to Hobbies › Sports & Fitness; moved the same way.
-DATA_VERSION = 5
+# 6: Plaid's name must agree on a distinctive word, not a generic one ("City of Vancouver").
+DATA_VERSION = 6
 # Versions below this read the history again from the start; newer steps only fix rows in place.
-REIMPORT_BELOW = 3
+REIMPORT_BELOW = 6
 # Category mapping changes applied to charges already imported:
 # (version that introduced it, Plaid category prefix, category the old mapping gave).
 CATEGORY_MOVES: tuple[tuple[int, str, str], ...] = (

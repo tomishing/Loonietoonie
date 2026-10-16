@@ -35,6 +35,8 @@ def clean_bank_text(text: str) -> str:
     plain = _FOREIGN_AMOUNT.sub("", text)
     plain = _REFERENCES.sub(" ", _BANK_PREFIXES.sub("", plain, count=1)).strip(" -–*:/.,@")
     plain = re.sub(r"\s+,", ",", plain)  # "GROWMUSHROO 2503276931, BC" → "Growmushroo, BC"
+    if plain.count("(") > plain.count(")"):  # a bracket the bank cut off: "ROSEMARY BROWN ( BURNABY"
+        plain = re.sub(r"\s*\((?!.*\))\s*", " ", plain)
     words = plain.split()
     if not words:
         return text.strip()
@@ -69,13 +71,26 @@ def _compact_letters(text: str) -> str:
     return re.sub(r"[^a-z]+", "", plain)
 
 
+# Words too common to identify a business on their own: "City of Vancouver" must agree with the
+# bank's text on "Vancouver", not on "City" (the charge was CITY BBY..., the City of Burnaby).
+_GENERIC_WORDS = frozenset(
+    {
+        "of", "and", "de", "la", "le", "les", "du", "des", "cie",
+        "city", "town", "county", "district", "municipality", "province", "government",
+        "university", "college", "school", "hospital", "bank", "church",
+        "restaurant", "restaurants", "cafe", "coffee", "bar", "grill", "kitchen", "bakery",
+        "market", "supermarket", "pharmacy", "gas", "station", "hotel", "inn", "services",
+    }
+)  # fmt: skip
+
+
 def _first_token(name: str) -> str:
     """The merchant name's first meaningful token, letters only ("A&W Restaurants" → "aw"). It is
     the most distinctive part: sharing only a generic word ("Sushiya Japanese Restaurant" vs
     "SUZUYA JAPANESE") doesn't make it the same business."""
     for token in name.split():
         letters = _compact_letters(token)
-        if len(letters) > 1 and letters not in _NOISE_WORDS:
+        if len(letters) > 1 and letters not in _NOISE_WORDS and letters not in _GENERIC_WORDS:
             return letters
     return ""
 

@@ -52,6 +52,9 @@ def test_clean_bank_text(text: str, expected: str) -> None:
         ("McDonald's", "", "McDonald's"),
         ("A&W Restaurants", "A&W RESTAURANT (KINGSWAY) BURNABY, BC", "A&W Restaurants"),
         ("Superior Vending", "RETAIL PURCHASE 527409985785 COMPASS VENDING", "Compass Vending"),
+        ("City of Vancouver", "CITY BBY ROSEMARY BROWN ( BURNABY, BC", "City Bby Rosemary Brown Burnaby, BC"),
+        ("City of Vancouver", "CITY OF VANCOUVER PARKING", "City of Vancouver"),
+        ("Sushi Garden", "SUSHI GARDEN METROTOWN", "Sushi Garden"),
         ("", "UBER *TRIP", "Uber *Trip"),
     ],
 )
