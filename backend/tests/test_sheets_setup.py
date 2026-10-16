@@ -53,7 +53,7 @@ def test_first_sign_in_seeds_default_categories() -> None:
 
     rows = api.sheet(spreadsheet_id, "categories").rows[1:]
     assert rows == [[name, icon, NOW, "FALSE"] for name, icon in DEFAULT_CATEGORIES]
-    assert len(rows) == 15
+    assert len(rows) == 16
     assert ["Tax & Fees", "🧾", NOW, "FALSE"] in rows
 
 
@@ -127,6 +127,7 @@ def test_migration_adds_missing_tab_and_columns_and_keeps_data() -> None:
         ["Snacks", "🍪", NOW, "FALSE"],
         ["Tax & Fees", "🧾", NOW, "FALSE"],
         ["Travel", "✈️", NOW, "FALSE"],
+        ["Hobbies", "🎨", NOW, "FALSE"],
     ]
     # the new subcategories tab starts with the defaults
     subcategories = api.sheet("sheet-1", "subcategories").rows
@@ -244,19 +245,19 @@ def test_required_category_is_added_once() -> None:
     ensure_spreadsheet(api, NOW)
 
     names = [row[0] for row in api.sheet("sheet-1", "categories").rows[1:]]
-    assert names == ["Groceries", "Tax & Fees", "Travel"]
+    assert names == ["Groceries", "Tax & Fees", "Travel", "Hobbies"]
     assert api.write_calls == []
 
 
 def test_soft_deleted_required_category_is_not_re_added() -> None:
     api = FakeSheetsApi()
     existing_spreadsheet_with_categories(
-        api, [["tax & fees", "🧾", NOW, "TRUE"], ["travel", "✈️", NOW, "TRUE"]]
+        api, [["tax & fees", "🧾", NOW, "TRUE"], ["travel", "✈️", NOW, "TRUE"], ["hobbies", "🎨", NOW, "TRUE"]]
     )
 
     ensure_spreadsheet(api, NOW)
 
-    assert len(api.sheet("sheet-1", "categories").rows) == 3
+    assert len(api.sheet("sheet-1", "categories").rows) == 4
     assert api.write_calls == []
 
 

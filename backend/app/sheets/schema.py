@@ -97,6 +97,7 @@ DEFAULT_CATEGORIES: tuple[tuple[str, str], ...] = (
     ("Kids", "🧸"),
     ("Pets", "🐾"),
     ("Travel", "✈️"),
+    ("Hobbies", "🎨"),
     ("Tax & Fees", "🧾"),
     ("Other", "📦"),
 )
@@ -133,6 +134,14 @@ DEFAULT_SUBCATEGORIES: dict[str, tuple[str, ...]] = {
         "Trains & Buses",
         "Tours & Activities",
         "Travel Insurance & Fees",
+    ),
+    "Hobbies": (
+        "Arts & Crafts",
+        "Sports & Fitness",
+        "Outdoors & Camping",
+        "Music & Instruments",
+        "Gardening & Plants",
+        "Classes & Clubs",
     ),
     "Tax & Fees": ("Sales Tax", "Deposits & Eco Fees", "Bag Fees", "Tips & Service"),
 }
@@ -217,6 +226,13 @@ SUBCATEGORY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "Travel",
         "Travel Insurance & Fees",
     ): "Travel insurance, visas, passports, airport and travel agency fees",
+    # Hobbies are things you do or make; Entertainment is things you watch, read, or listen to.
+    ("Hobbies", "Arts & Crafts"): "Art supplies, craft materials, sewing, knitting, model kits",
+    ("Hobbies", "Sports & Fitness"): "Gym memberships, sports equipment, club and league fees",
+    ("Hobbies", "Outdoors & Camping"): "Camping, hiking, fishing, and cycling gear, park passes",
+    ("Hobbies", "Music & Instruments"): "Musical instruments, sheet music, music gear and repairs",
+    ("Hobbies", "Gardening & Plants"): "Plants, seeds, soil, and garden tools for the hobby",
+    ("Hobbies", "Classes & Clubs"): "Adult classes, workshops, hobby clubs and memberships",
 }
 
 # Defaults added after the subcategories tab first shipped. Appended to existing spreadsheets on
@@ -225,6 +241,7 @@ ADDED_SUBCATEGORIES: tuple[tuple[str, str], ...] = (
     ("Groceries", "Tofu & Plant Protein"),
     ("Groceries", "Rice, Grains & Cereal"),
     *(("Travel", name) for name in DEFAULT_SUBCATEGORIES["Travel"]),
+    *(("Hobbies", name) for name in DEFAULT_SUBCATEGORIES["Hobbies"]),
 )
 # Defaults renamed since they first shipped: (category, old name) → new name. Applied on migration to
 # an active row with the old name when no row with the new name exists. Saved items keep the old name.
@@ -237,7 +254,7 @@ TAX_CATEGORY = "Tax & Fees"
 # with that name already exists (a row the user soft-deleted counts, so it isn't re-added).
 REQUIRED_CATEGORIES: tuple[tuple[str, str], ...] = ((TAX_CATEGORY, "🧾"),)
 # Default categories added after the first release, appended to existing spreadsheets the same way.
-ADDED_CATEGORIES: tuple[tuple[str, str], ...] = (("Travel", "✈️"),)
+ADDED_CATEGORIES: tuple[tuple[str, str], ...] = (("Travel", "✈️"), ("Hobbies", "🎨"))
 
 
 def utc_now_iso() -> str:
