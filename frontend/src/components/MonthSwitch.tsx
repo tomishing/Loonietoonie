@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { formatMonth } from '../lib/format'
-import { openPicker } from '../lib/picker'
 import { Icon } from './Icon'
+import { MonthPicker } from './MonthPicker'
 
 function shiftMonth(month: string, delta: number): string {
   const [year, number] = month.split('-').map(Number)
@@ -8,8 +9,9 @@ function shiftMonth(month: string, delta: number): string {
   return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`
 }
 
-/** ‹ October 2026 › with the native month picker behind the label. */
+/** ‹ October 2026 ›; the label opens the month picker. */
 export function MonthSwitch({ month, max, onChange }: { month: string; max: string; onChange: (month: string) => void }) {
+  const [picking, setPicking] = useState(false)
   return (
     <div className="month-switch" role="group" aria-label="Month">
       <button
@@ -20,19 +22,17 @@ export function MonthSwitch({ month, max, onChange }: { month: string; max: stri
       >
         <Icon name="left" size={20} />
       </button>
-      <label className="month-switch-label">
+      <button
+        type="button"
+        className="month-switch-label"
+        aria-haspopup="dialog"
+        aria-label={`Month: ${formatMonth(month)}`}
+        onClick={() => setPicking(true)}
+      >
         <span>{formatMonth(month)}</span>
         <Icon name="down" size={16} />
-        <input
-          type="month"
-          className="month-switch-input"
-          aria-label="Month"
-          value={month}
-          max={max}
-          onClick={openPicker}
-          onChange={(event) => event.target.value && onChange(event.target.value)}
-        />
-      </label>
+      </button>
+      {picking && <MonthPicker value={month} max={max} onChange={onChange} onClose={() => setPicking(false)} />}
       <button
         type="button"
         className="icon-button"

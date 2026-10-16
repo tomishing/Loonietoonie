@@ -12,10 +12,10 @@ import {
 } from '../api/client'
 import { BankTransactionList } from '../components/BankTransactionList'
 import { Icon } from '../components/Icon'
+import { MonthPicker } from '../components/MonthPicker'
 import { isNativeApp } from '../platform'
 import { categoryIcon, useCategories, type CategoriesState } from '../hooks/useCategories'
 import { formatDecimal, lineTotal, parseDecimal } from '../lib/decimal'
-import { openPicker } from '../lib/picker'
 import { formatDate, formatMoney, formatMonth, monthRange, todayIso } from '../lib/format'
 
 type Result = { status: 'loaded'; receipts: Receipt[] } | { status: 'error'; messages: string[] }
@@ -56,6 +56,7 @@ export function TransactionsPage() {
   // Receipts (scanned or typed in), or transactions imported from linked banks and cards.
   const view = searchParams.get('view') === 'bank' ? 'bank' : 'receipts'
   const [bank, setBank] = useState<BankStatus | null>(null)
+  const [pickingMonth, setPickingMonth] = useState(false)
   const categories = useCategories()
   const location = useLocation()
   const { highlight, notice } = (location.state as TransactionsLocationState | null) ?? {}
@@ -213,19 +214,23 @@ export function TransactionsPage() {
         >
           This month
         </button>
-        <label className={`chip chip-toggle chip-picker${month && month !== thisMonth ? ' chip-on' : ''}`}>
+        <button
+          type="button"
+          className={`chip chip-toggle chip-picker${month && month !== thisMonth ? ' chip-on' : ''}`}
+          aria-haspopup="dialog"
+          onClick={() => setPickingMonth(true)}
+        >
           {month && month !== thisMonth ? formatMonth(month) : 'Pick a month'}
           <Icon name="down" size={16} />
-          <input
-            type="month"
-            className="month-switch-input"
-            aria-label="Month"
+        </button>
+        {pickingMonth && (
+          <MonthPicker
             value={month}
             max={thisMonth}
-            onClick={openPicker}
-            onChange={(event) => setFilter('month', event.target.value)}
+            onChange={(value) => setFilter('month', value)}
+            onClose={() => setPickingMonth(false)}
           />
-        </label>
+        )}
         <label className={`chip-select${category ? ' chip-on' : ''}`}>
           <span className="sr-only">Category</span>
           <select value={category} onChange={(event) => setFilter('category', event.target.value)}>
