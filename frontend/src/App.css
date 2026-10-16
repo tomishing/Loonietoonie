@@ -1232,6 +1232,41 @@ details[open] > summary .category-entry-chevron {
   font-size: 0.88rem;
 }
 
+.category-editor {
+  margin: 0 14px;
+  padding: 0 0 14px;
+}
+
+.category-editor .receipt-actions {
+  padding: 0;
+}
+
+.category-editor-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.category-editor .notice {
+  max-width: none;
+  margin: 8px 0 0;
+}
+
+.checkbox-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.checkbox-row input {
+  width: 20px;
+  min-height: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .match-options {
   display: flex;
   flex-direction: column;

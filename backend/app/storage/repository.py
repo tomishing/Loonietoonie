@@ -6,6 +6,7 @@ from app.storage.models import (
     BankTransaction,
     BankTransactionFilter,
     Category,
+    MerchantRule,
     Receipt,
     ReceiptDraft,
     ReceiptFilter,
@@ -88,4 +89,17 @@ class Repository(Protocol):
 
     def remove_bank_transactions(self, account_ids: list[str]) -> int:
         """Soft-delete all transactions of these accounts (unlink with "remove transactions")."""
+        ...
+
+    def update_bank_fields(self, updates: dict[str, dict[str, str]]) -> None:
+        """Change user fields (kind, category, subcategory, receipt_id) of transactions
+        {transaction_id: {column: value}}, all in one write."""
+        ...
+
+    def list_merchant_rules(self) -> list[MerchantRule]:
+        """Active remembered categories, one per merchant."""
+        ...
+
+    def save_merchant_rule(self, rule: MerchantRule) -> None:
+        """Add or replace the remembered category for rule.merchant."""
         ...

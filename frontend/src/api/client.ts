@@ -562,3 +562,23 @@ export function listBankTransactions(filters: { from?: string; to?: string; cate
   const query = params.toString()
   return apiGet<BankTransaction[]>(`/api/bank/transactions${query ? `?${query}` : ''}`)
 }
+
+/**
+ * Change a charge's category (or mark it as not spending). With applyToMerchant, every charge from
+ * the same merchant changes too, and new ones get it when imported. Returns how many changed.
+ */
+export async function setBankCategory(
+  transactionId: string,
+  choice: { kind: BankTransaction['kind']; category: string; subcategory: string; applyToMerchant: boolean },
+): Promise<number> {
+  const result = await apiPut<{ changed: number }>(
+    `/api/bank/transactions/${encodeURIComponent(transactionId)}/category`,
+    {
+      kind: choice.kind,
+      category: choice.category,
+      subcategory: choice.subcategory,
+      apply_to_merchant: choice.applyToMerchant,
+    },
+  )
+  return result.changed
+}

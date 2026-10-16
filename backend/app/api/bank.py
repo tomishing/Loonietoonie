@@ -12,10 +12,10 @@ from app.bank.plaid import BankProvider, PlaidError
 from app.bank.token_store import TokenStore
 from app.config import Settings, get_settings
 from app.services import bank as service
-from app.services import matching
+from app.services import bank_categories, matching
 from app.sheets.schema import utc_now_iso
 from app.storage.dependencies import get_repository
-from app.storage.models import BankTransaction, BankTransactionFilter
+from app.storage.models import BankTransaction, BankTransactionFilter, BankTransactionKind
 from app.storage.repository import Repository
 
 router = APIRouter(prefix="/bank", tags=["bank"])
@@ -200,3 +200,36 @@ def choose_receipt(
     except matching.MatchError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class CategoryChoice(BaseModel):
+    kind: BankTransactionKind = "spending"
+    category: str = Field(default="", max_length=200)
+    subcategory: str = Field(default="", max_length=200)
+    # Also every other charge from the same merchant, now and when new ones are imported.
+    apply_to_merchant: bool = True
+
+
+class CategoryChanged(BaseModel):
+    changed: int
+
+
+@router.put("/transactions/{transaction_id}/category", response_model=CategoryChanged)
+def choose_category(
+    transaction_id: str, body: CategoryChoice, user: UserDep, repository: RepositoryDep
+) -> CategoryChanged:
+    """Change a charge's category (or mark it as not spending), optionally for the whole merchant."""
+    try:
+        changed = bank_categories.set_category(
+            repository,
+            transaction_id,
+            body.kind,
+            body.category,
+            body.subcategory,
+            body.apply_to_merchant,
+        )
+    except bank_categories.TransactionNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Transaction not found") from exc
+    except bank_categories.CategoryChoiceError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    return CategoryChanged(changed=changed)

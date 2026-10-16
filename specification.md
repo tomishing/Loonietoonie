@@ -114,8 +114,8 @@ Sheets API quotas are about 60 reads + 60 writes per minute per user, so:
 2. If none exists, find or create the Drive folder **LoonieToonie** (`loonietoonie=root-folder`) and create the **LoonieToonie** spreadsheet inside it.
 3. Migrate: add any missing tab, and append any missing column to the end of an existing tab's header row. Existing data, column order, and extra tabs or columns the user added are left alone. A new spreadsheet's empty starter tab ("Sheet1", or its localized name) becomes `receipts`. Header rows are frozen.
 4. When the `categories` tab is created, it is filled with the default categories (§4). An existing `categories` tab is never reseeded. Likewise, when the `subcategories` tab is created (new spreadsheets, and existing ones the first time they are migrated after the tab was added), it is filled with the default subcategories; an existing one is never reseeded.
-5. Data migration: categories the app relies on (currently **Tax & Fees**) are appended to an existing `categories` tab if no row with that name exists. A row the user soft-deleted counts as existing, so it is not re-added.
-6. Data migration for subcategories: defaults added after the tab first shipped (`ADDED_SUBCATEGORIES`: Groceries › Tofu & Plant Protein, Groceries › Rice, Grains & Cereal) are appended unless a row with that category and name exists (soft-deleted counts); defaults renamed since (`RENAMED_SUBCATEGORIES`: Groceries › Produce → Fresh Fruit & Vegetables) are renamed in place on an active row when no row with the new name exists. Saved items keep the old name. Blank descriptions of default subcategories are filled with the default description; descriptions the user wrote are never changed.
+5. Data migration: categories the app relies on (currently **Tax & Fees**) and default categories added later (`ADDED_CATEGORIES`: **Travel**) are appended to an existing `categories` tab if no row with that name exists. A row the user soft-deleted counts as existing, so it is not re-added.
+6. Data migration for subcategories: defaults added after the tab first shipped (`ADDED_SUBCATEGORIES`: Groceries › Tofu & Plant Protein, Groceries › Rice, Grains & Cereal, and the six Travel subcategories) are appended unless a row with that category and name exists (soft-deleted counts); defaults renamed since (`RENAMED_SUBCATEGORIES`: Groceries › Produce → Fresh Fruit & Vegetables) are renamed in place on an active row when no row with the new name exists. Saved items keep the old name. Blank descriptions of default subcategories are filled with the default description; descriptions the user wrote are never changed.
 
 First sign-in costs 2 Drive writes and 2 Sheets writes. Later sign-ins cost 4 reads and no writes when everything is already current.
 
@@ -151,6 +151,7 @@ The migration also runs the first time each server process uses a spreadsheet (`
 | `subcategories` | category, name, description, updated_at, deleted |
 | `bank_accounts` | account_id, item_id, institution, name, mask, type, subtype, currency, updated_at, deleted |
 | `bank_transactions` | transaction_id, account_id, date, merchant, description, amount, currency, kind, category, subcategory, plaid_category, pending, receipt_id, updated_at, deleted |
+| `merchant_categories` | merchant (merchant key), kind, category, subcategory, updated_at, deleted |
 | `settings` | key, value, updated_at |
 | `ocr_labels` | receipt_id, field, model_value, corrected_value (opt-in) |
 
@@ -177,7 +178,8 @@ Created with a new `categories` tab. Users can edit them later.
 | 🚗 | Transportation | 🎮 | Entertainment |
 | 💡 | Utilities | 🧸 | Kids |
 | 🏠 | Housing | 🐾 | Pets |
-| 🧾 | Tax & Fees | 📦 | Other |
+| ✈️ | Travel | 🧾 | Tax & Fees |
+| 📦 | Other | | |
 
 **Tax & Fees** holds taxes and fees added on top of item prices (GST/HST/PST, TPS/TVQ, US sales tax, Japanese 外税, deposits, eco and bag fees, tips). The app relies on it, so it is added to existing spreadsheets on sign-in (§3).
 
@@ -199,6 +201,7 @@ Optional finer groups within a category (Groceries › Bakery). One row per subc
 | Entertainment | Movies & Shows, Games, Books & Music, Events, Subscriptions |
 | Kids | Toys, School Supplies, Baby Care, Activities |
 | Pets | Pet Food, Vet, Pet Supplies |
+| Travel | Flights; Lodging; Car Rental; Trains & Buses; Tours & Activities; Travel Insurance & Fees |
 | Tax & Fees | Sales Tax, Deposits & Eco Fees, Bag Fees, Tips & Service |
 | Other | (none) |
 
@@ -277,6 +280,7 @@ Tests: `tests/samples/` holds OCR texts in English (Ontario, HST), French (Québ
 | POST | `/api/bank/sync` | Import new/changed/removed transactions from every linked item → per item `{status: ok / needs_relink / error, changes, bank_updated_at, refresh_requested}`. `refresh=true` also asks Plaid to read each bank now (at most hourly) |
 | GET | `/api/bank/transactions` | Imported transactions, newest first. Filters: `from`, `to`, `account_id`, `category` |
 | GET | `/api/bank/transactions/{id}/candidates` | Receipts that could explain a charge (same currency, ±7 days), best first, with `likely` |
+| PUT | `/api/bank/transactions/{id}/category` | `{kind, category, subcategory, apply_to_merchant}` → `{changed}`: set a charge's category (or not spending), with `apply_to_merchant` for every charge from the merchant now and at import |
 | PUT | `/api/bank/transactions/{id}/receipt` | `{receipt_id}` to match by hand, or `{receipt_id: null}` for "no receipt"; 204 |
 | GET | `/api/export/csv` | CSV download (§7 Export). `kind=items` (default) or `receipts`; filters `from`, `to`, `category`, `subcategory`, `currency` |
 
@@ -330,9 +334,11 @@ Purpose: capture spending that has no receipt photo (card and bank transactions)
 - **Import:** `POST /api/bank/sync` uses Plaid `/transactions/sync` from the saved cursor, page by page (restarting from the saved cursor on `TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION`). Accounts are refreshed into `bank_accounts`; added and modified transactions are upserted into `bank_transactions` by `transaction_id`, removed ones soft-deleted. On update, the bank's fields change but `kind`, `category`, `subcategory`, and `receipt_id` (the user may have edited them in the Sheet) are kept. The cursor is saved **only after** the Sheet write succeeds, so a failed sync is repeated safely. One sync at a time per user.
 - **When it syncs:** on demand only (no background jobs or webhooks): when linking, the first time the "Bank & card" view opens in an app session, and with the **Sync** button (top of the Bank & card view, and **Sync now** on Account).
 - **Asking the bank now:** Plaid reads banks on its own schedule (it can be a day). The Sync button calls `POST /api/bank/sync?refresh=true`, which also asks Plaid to read each bank right away (`/transactions/refresh`, at most once an hour per bank; free on the Trial plan, billed per request on paid plans). Plaid reads the bank in the background, so the app checks back up to 4 times, 8 seconds apart, for the new transactions. When nothing new arrives, the app says when Plaid last read each bank (`bank_updated_at` from Plaid's item status) instead of "up to date"; the Bank & card view shows that time above the list.
-- **Dates:** a transaction's date is the **purchase date** (Plaid `authorized_date`), as bank and card websites show it; the posting date (Plaid `date`, up to several days later on credit cards) is used only when the purchase date is missing. Items imported before this rule (`data_version` 1 in the token store) are re-imported once from the start, which corrects their rows in place by `transaction_id` (user edits to kind, category, subcategory, and matches are kept).
+- **Dates:** a transaction's date is the **purchase date** (Plaid `authorized_date`), as bank and card websites show it; the posting date (Plaid `date`, up to several days later on credit cards) is used only when the purchase date is missing. Items imported before the current import rules (`data_version` below 3 in the token store: 2 = purchase dates, 3 = merchant names) are re-imported once from the start; version 4 (Travel) only moves charges with a Plaid travel category still shown as Transportation (no subcategory, no remembered category for the merchant) to Travel, without re-importing. A re-import corrects rows in place by `transaction_id` (user edits to kind, category, subcategory, and matches are kept).
 - **Amounts:** Plaid's sign is kept: positive = money spent, negative = refund or money in.
-- **Kind and category:** Plaid's personal finance category is mapped (`app/bank/categories.py`): transfers, credit-card and other loan payments → `transfer`, income → `income` (neither counts as spending; the mortgage payment counts as Housing › Rent & Mortgage); everything else → `spending` with the user's category and subcategory (e.g. `FOOD_AND_DRINK_COFFEE` → Dining Out › Coffee & Cafés). Names the user doesn't have fall back to Other / no subcategory. The raw Plaid code is kept in `plaid_category`.
+- **Merchant names** (`app/services/names.py`): `description` keeps the bank's own text; `merchant` is the name shown. Plaid's merchant name is a guess from its business database and is sometimes wrong ("SUZUYA JAPANESE MARKET" → "Suzuyo America Inc."), so it is used only when its first meaningful token appears in the bank's text (letters only); otherwise the bank's text is cleaned up and shown: purchase prefixes ("RETAIL PURCHASE", "POS"), reference and card numbers, and foreign-amount tails ("13.32 USD @ 1.42") are removed, capitalized words get title case, and a trailing province code stays ("Suzuya Japanese Market Burnaby, BC").
+- **Remembered categories:** each bank row has **Change category** (a category and subcategory, or "Not spending" as a transfer or income) with **All charges from <merchant>, including new ones** ticked by default (`PUT /api/bank/transactions/{id}/category`). With it, the choice is saved in `merchant_categories` under the merchant key (the name's first two meaningful words, lower-case and accent-free, so "Suzuya Japanese Market Burnaby, BC" and "Suzuya Japanese" are one merchant), applied to that merchant's existing charges at once, and used instead of Plaid's category for its new charges at import.
+- **Kind and category:** Plaid's personal finance category is mapped (`app/bank/categories.py`): transfers, credit-card and other loan payments → `transfer`, income → `income` (neither counts as spending; the mortgage payment counts as Housing › Rent & Mortgage); everything else → `spending` with the user's category and subcategory (e.g. `FOOD_AND_DRINK_COFFEE` → Dining Out › Coffee & Cafés, `TRAVEL_FLIGHTS` → Travel › Flights). Names the user doesn't have fall back to Other / no subcategory. The raw Plaid code is kept in `plaid_category`.
 - **Errors:** an item whose bank needs a new sign-in (`ITEM_LOGIN_REQUIRED` and similar) reports `needs_relink`; the app asks the user to unlink and link again (Plaid's update mode comes later). Other Plaid errors report `error` for that item only.
 - **Unlink:** revokes the item at Plaid, deletes its token, and soft-deletes its accounts. Imported transactions stay in the Sheet.
 - **Transactions page:** a **Receipts / Bank & card** switch (`view=bank` in the URL) appears once a bank is linked. The bank view starts with when each bank was last read and a **Sync** button, then shows transactions by month with merchant, date, account (name •• last 4), category or Transfer/Income, Pending, and refunds as +amount. Its total counts only `spending`. Month and category filters apply.

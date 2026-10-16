@@ -13,6 +13,7 @@ import { categoryIcon, type CategoriesState } from '../hooks/useCategories'
 import { formatDecimal, parseDecimal } from '../lib/decimal'
 import { formatDate, formatDateTime, formatMoney, formatMonth, monthRange } from '../lib/format'
 import { Icon } from './Icon'
+import { BankCategoryEditor } from './BankCategoryEditor'
 import { ReceiptMatch } from './ReceiptMatch'
 
 type State = { status: 'loading' } | { status: 'loaded'; transactions: BankTransaction[] } | { status: 'error'; messages: string[] }
@@ -248,6 +249,7 @@ export function BankTransactionList({
                               : 'Not spending: transfers, card payments, and income are left out of your spending.'}
                           </p>
                         )}
+                        <BankCategoryEditor transaction={t} categories={categories} onChanged={reload} />
                       </details>
                     </li>
                   )

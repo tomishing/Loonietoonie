@@ -16,7 +16,15 @@ from app.bank.categories import map_category
 from app.bank.plaid import BankProvider, PlaidError, PlaidTransaction, SyncPage
 from app.bank.token_store import LinkedItem, TokenStore
 from app.services.matching import refresh_matches
-from app.storage.models import BankAccount, BankChanges, BankTransaction, Category
+from app.services.names import display_name, merchant_key
+from app.storage.models import (
+    BankAccount,
+    BankChanges,
+    BankTransaction,
+    BankTransactionFilter,
+    Category,
+    MerchantRule,
+)
 from app.storage.repository import Repository
 
 # Plaid asks to restart the whole sync from the first cursor when data changes mid-way.
@@ -30,7 +38,11 @@ ItemStatus = Literal["ok", "needs_relink", "error"]
 # Bump when the way transactions are imported changes; items synced with an older version are
 # re-imported once from the start (their rows are updated in place by transaction_id).
 # 2: the date is the purchase date (Plaid authorized_date), not the posting date.
-DATA_VERSION = 2
+# 3: the merchant is Plaid's name only when it agrees with the bank's text (services/names.py).
+# 4: Plaid's travel categories map to Travel; charges imported as Transportation are moved once.
+DATA_VERSION = 4
+# Versions below this read the history again from the start; newer steps only fix rows in place.
+REIMPORT_BELOW = 3
 # "Sync" also asks Plaid to read the bank right away, at most this often per bank (Plaid bills
 # /transactions/refresh per request outside the Trial plan).
 REFRESH_INTERVAL = timedelta(hours=1)
@@ -67,24 +79,36 @@ class SyncResult(BaseModel):
 
 
 def to_transaction(
-    plaid: PlaidTransaction, categories: list[Category], default_currency: str
+    plaid: PlaidTransaction,
+    categories: list[Category],
+    default_currency: str,
+    rules: dict[str, MerchantRule] | None = None,
 ) -> BankTransaction:
+    """A Plaid transaction as a sheet row. A category the user chose for the merchant (`rules`,
+    by merchant_key) wins over Plaid's category."""
     category = plaid.personal_finance_category
     primary, detailed = (category.primary, category.detailed) if category else ("", "")
     mapped = map_category(primary, detailed, categories)
     currency = (plaid.iso_currency_code or plaid.unofficial_currency_code or default_currency).upper()
+    name = display_name(plaid.merchant_name or "", plaid.name)
+    rule = (rules or {}).get(merchant_key(name))
+    kind, category_name, subcategory = (
+        (rule.kind, rule.category, rule.subcategory)
+        if rule
+        else (mapped.kind, mapped.category, mapped.subcategory)
+    )
     return BankTransaction(
         transaction_id=plaid.transaction_id,
         account_id=plaid.account_id,
         # The purchase date, as banks and card statements show it; the posting date can be days later.
         date=plaid.authorized_date or plaid.date,
-        merchant=(plaid.merchant_name or "").strip(),
+        merchant=name,
         description=plaid.name.strip(),
         amount=plaid.amount,
         currency=currency,
-        kind=mapped.kind,
-        category=mapped.category,
-        subcategory=mapped.subcategory,
+        kind=kind,
+        category=category_name,
+        subcategory=subcategory,
         plaid_category=detailed or primary,
         pending=plaid.pending,
     )
@@ -221,17 +245,20 @@ def _sync_item(
     now: str,
 ) -> ItemSyncResult:
     # An item imported the old way is read again from the start; rows are updated in place.
-    start = item.cursor if item.data_version >= DATA_VERSION else ""
+    start = item.cursor if item.data_version >= REIMPORT_BELOW else ""
     try:
         repository.save_bank_accounts(to_accounts(provider, item, default_currency))
         pages = _collect_pages(provider, item.access_token, start)
+        rules = {rule.merchant: rule for rule in repository.list_merchant_rules()}
         upserts = [
-            to_transaction(t, categories, default_currency)
+            to_transaction(t, categories, default_currency, rules)
             for page in pages
             for t in [*page.added, *page.modified]
         ]
         removed = [transaction_id for page in pages for transaction_id in page.removed]
         changes = repository.apply_bank_changes(upserts, removed)
+        if item.data_version < 4:
+            _move_travel_charges(repository, categories)
         bank_updated_at = provider.bank_updated_at(item.access_token)
     except PlaidError as exc:
         status: ItemStatus = "needs_relink" if exc.code in RELINK_CODES else "error"
@@ -252,6 +279,22 @@ def _sync_item(
         changes=changes,
         bank_updated_at=bank_updated_at or item.bank_updated_at,
     )
+
+
+def _move_travel_charges(repository: Repository, categories: list[Category]) -> None:
+    """Version 4: charges Plaid calls travel were imported as Transportation before Travel existed.
+    Move those still showing that old result (not ones the user chose for the merchant)."""
+    rules = {rule.merchant for rule in repository.list_merchant_rules()}
+    updates: dict[str, dict[str, str]] = {}
+    for t in repository.list_bank_transactions(BankTransactionFilter()):
+        if not t.plaid_category.upper().startswith("TRAVEL") or t.kind != "spending":
+            continue
+        if t.category != "Transportation" or t.subcategory or merchant_key(t.merchant) in rules:
+            continue
+        mapped = map_category("TRAVEL", t.plaid_category, categories)
+        if mapped.category != t.category:
+            updates[t.transaction_id] = {"category": mapped.category, "subcategory": mapped.subcategory}
+    repository.update_bank_fields(updates)
 
 
 def _collect_pages(provider: BankProvider, access_token: str, start: str) -> list[SyncPage]:

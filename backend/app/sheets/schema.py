@@ -77,6 +77,8 @@ TABS: dict[str, tuple[str, ...]] = {
         "updated_at",
         "deleted",
     ),
+    # Categories the user chose for a merchant's bank charges (merchant = services/names.merchant_key).
+    "merchant_categories": ("merchant", "kind", "category", "subcategory", "updated_at", "deleted"),
     "settings": ("key", "value", "updated_at"),
     "ocr_labels": ("receipt_id", "field", "model_value", "corrected_value"),
 }
@@ -94,6 +96,7 @@ DEFAULT_CATEGORIES: tuple[tuple[str, str], ...] = (
     ("Entertainment", "🎮"),
     ("Kids", "🧸"),
     ("Pets", "🐾"),
+    ("Travel", "✈️"),
     ("Tax & Fees", "🧾"),
     ("Other", "📦"),
 )
@@ -123,6 +126,14 @@ DEFAULT_SUBCATEGORIES: dict[str, tuple[str, ...]] = {
     "Entertainment": ("Movies & Shows", "Games", "Books & Music", "Events", "Subscriptions"),
     "Kids": ("Toys", "School Supplies", "Baby Care", "Activities"),
     "Pets": ("Pet Food", "Vet", "Pet Supplies"),
+    "Travel": (
+        "Flights",
+        "Lodging",
+        "Car Rental",
+        "Trains & Buses",
+        "Tours & Activities",
+        "Travel Insurance & Fees",
+    ),
     "Tax & Fees": ("Sales Tax", "Deposits & Eco Fees", "Bag Fees", "Tips & Service"),
 }
 
@@ -197,6 +208,15 @@ SUBCATEGORY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("Tax & Fees", "Deposits & Eco Fees"): "Bottle deposits, environmental and recycling fees",
     ("Tax & Fees", "Bag Fees"): "Shopping bag charges",
     ("Tax & Fees", "Tips & Service"): "Tips, gratuities, service charges",
+    ("Travel", "Flights"): "Airfare, seat selection, checked and carry-on bag fees",
+    ("Travel", "Lodging"): "Hotels, motels, hostels, Airbnb and vacation rentals",
+    ("Travel", "Car Rental"): "Rental cars and their insurance and fuel charges",
+    ("Travel", "Trains & Buses"): "Intercity trains, coaches, and ferries on a trip (not daily transit)",
+    ("Travel", "Tours & Activities"): "Tours, attractions, tickets, and activities while travelling",
+    (
+        "Travel",
+        "Travel Insurance & Fees",
+    ): "Travel insurance, visas, passports, airport and travel agency fees",
 }
 
 # Defaults added after the subcategories tab first shipped. Appended to existing spreadsheets on
@@ -204,6 +224,7 @@ SUBCATEGORY_DESCRIPTIONS: dict[tuple[str, str], str] = {
 ADDED_SUBCATEGORIES: tuple[tuple[str, str], ...] = (
     ("Groceries", "Tofu & Plant Protein"),
     ("Groceries", "Rice, Grains & Cereal"),
+    *(("Travel", name) for name in DEFAULT_SUBCATEGORIES["Travel"]),
 )
 # Defaults renamed since they first shipped: (category, old name) → new name. Applied on migration to
 # an active row with the old name when no row with the new name exists. Saved items keep the old name.
@@ -215,6 +236,8 @@ TAX_CATEGORY = "Tax & Fees"
 # Categories the app relies on. Added to existing spreadsheets on sign-in unless a row
 # with that name already exists (a row the user soft-deleted counts, so it isn't re-added).
 REQUIRED_CATEGORIES: tuple[tuple[str, str], ...] = ((TAX_CATEGORY, "🧾"),)
+# Default categories added after the first release, appended to existing spreadsheets the same way.
+ADDED_CATEGORIES: tuple[tuple[str, str], ...] = (("Travel", "✈️"),)
 
 
 def utc_now_iso() -> str:

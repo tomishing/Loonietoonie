@@ -155,6 +155,15 @@ class BankTransactionFilter(BaseModel):
     category: str | None = None
 
 
+class MerchantRule(BaseModel):
+    """The user's choice for every bank charge from one merchant."""
+
+    merchant: str  # services/names.merchant_key of the charge's name
+    kind: BankTransactionKind
+    category: str
+    subcategory: str
+
+
 class BankChanges(BaseModel):
     added: int = 0
     modified: int = 0

@@ -7,6 +7,7 @@ from gspread.utils import rowcol_to_a1
 
 from app.sheets.api import SheetInfo, SheetsApi
 from app.sheets.schema import (
+    ADDED_CATEGORIES,
     ADDED_SUBCATEGORIES,
     DEFAULT_CATEGORIES,
     DEFAULT_SUBCATEGORIES,
@@ -132,14 +133,19 @@ def migrate_once(api: SheetsApi, spreadsheet_id: str, now: str) -> None:
 
 
 def _add_required_categories(api: SheetsApi, spreadsheet_id: str, now: str) -> None:
-    """Data migration: append categories the app relies on (one read, at most one write)."""
+    """Data migration: append categories the app relies on and default categories added since
+    the first release (one read, at most one write)."""
     rows = api.read_values(spreadsheet_id, tab_range("categories"))
     headers = [header.strip() for header in rows[0]] if rows else []
     if "name" not in headers:
         return
     name_index = headers.index("name")
     existing = {row[name_index].strip().casefold() for row in rows[1:] if len(row) > name_index}
-    missing = [(name, icon) for name, icon in REQUIRED_CATEGORIES if name.casefold() not in existing]
+    missing = [
+        (name, icon)
+        for name, icon in (*REQUIRED_CATEGORIES, *ADDED_CATEGORIES)
+        if name.casefold() not in existing
+    ]
     if missing:
         records = [
             {"name": name, "icon": icon, "updated_at": now, "deleted": FALSE} for name, icon in missing

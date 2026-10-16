@@ -22,6 +22,7 @@ from app.storage.models import (
     Category,
     Item,
     ItemDraft,
+    MerchantRule,
     Receipt,
     ReceiptDraft,
     ReceiptFilter,
@@ -307,6 +308,11 @@ class SheetsRepository:
         return changes
 
     def set_bank_receipt_ids(self, updates: dict[str, str]) -> None:
+        self.update_bank_fields(
+            {transaction_id: {"receipt_id": value} for transaction_id, value in updates.items()}
+        )
+
+    def update_bank_fields(self, updates: dict[str, dict[str, str]]) -> None:
         if not updates:
             return
         tab = self._read("bank_transactions", fresh=True)
@@ -316,15 +322,43 @@ class SheetsRepository:
                 (
                     "bank_transactions",
                     _with_values(
-                        row,
-                        tab.headers,
-                        {"receipt_id": updates[row.values["transaction_id"]], "updated_at": now},
+                        row, tab.headers, {**updates[row.values["transaction_id"]], "updated_at": now}
                     ),
                 )
                 for row in _active(tab)
                 if row.values.get("transaction_id") in updates
             ]
         )
+
+    def list_merchant_rules(self) -> list[MerchantRule]:
+        rules: dict[str, MerchantRule] = {}
+        for row in _active(self._read("merchant_categories")):
+            merchant = row.values.get("merchant", "").strip()
+            kind = row.values.get("kind", "").strip().lower()
+            if merchant and kind in KINDS:
+                rules[merchant] = MerchantRule(
+                    merchant=merchant,
+                    kind=kind,  # type: ignore[arg-type]
+                    category=row.values.get("category", "").strip(),
+                    subcategory=row.values.get("subcategory", "").strip(),
+                )
+        return list(rules.values())  # a later row for the same merchant wins
+
+    def save_merchant_rule(self, rule: MerchantRule) -> None:
+        tab = self._read("merchant_categories", fresh=True)
+        record = {
+            "merchant": rule.merchant,
+            "kind": rule.kind,
+            "category": rule.category,
+            "subcategory": rule.subcategory,
+            "updated_at": utc_now_iso(),
+            "deleted": FALSE,
+        }
+        existing = [row for row in _active(tab) if row.values.get("merchant", "").strip() == rule.merchant]
+        if existing:
+            self._write_rows([("merchant_categories", _with_values(existing[-1], tab.headers, record))])
+        else:
+            self._append("merchant_categories", tab.headers, [record])
 
     def remove_bank_transactions(self, account_ids: list[str]) -> int:
         tab = self._read("bank_transactions", fresh=True)

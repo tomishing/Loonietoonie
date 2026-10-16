@@ -63,6 +63,9 @@ DETAILED: dict[str, tuple[str, str]] = {
     "ENTERTAINMENT_SPORTING_EVENTS_AMUSEMENT_PARKS_AND_MUSEUMS": ("Entertainment", "Events"),
     "GENERAL_SERVICES_CHILDCARE": ("Kids", "Activities"),
     "GENERAL_SERVICES_EDUCATION": ("Kids", "School Supplies"),
+    "TRAVEL_FLIGHTS": ("Travel", "Flights"),
+    "TRAVEL_LODGING": ("Travel", "Lodging"),
+    "TRAVEL_RENTAL_CARS": ("Travel", "Car Rental"),
 }
 
 # Fallback by primary Plaid category.
@@ -71,7 +74,7 @@ PRIMARY: dict[str, tuple[str, str]] = {
     "GENERAL_MERCHANDISE": (OTHER, ""),
     "HOME_IMPROVEMENT": ("Household", ""),
     "TRANSPORTATION": ("Transportation", ""),
-    "TRAVEL": ("Transportation", ""),
+    "TRAVEL": ("Travel", ""),
     "RENT_AND_UTILITIES": ("Utilities", ""),
     "MEDICAL": ("Health", ""),
     "PERSONAL_CARE": ("Personal Care", ""),

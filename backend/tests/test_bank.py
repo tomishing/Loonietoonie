@@ -35,6 +35,7 @@ from tests.test_auth import make_settings
 NOW = "2026-10-15T12:00:00Z"
 USER = "google-sub-1"
 CATEGORIES = [
+    Category(name="Travel", icon="", subcategories=["Flights", "Lodging"]),
     Category(name="Groceries", icon="", subcategories=["Drinks"]),
     Category(name="Dining Out", icon="", subcategories=["Restaurants", "Coffee & Cafés"]),
     Category(name="Transportation", icon="", subcategories=["Fuel"]),
@@ -193,6 +194,8 @@ def test_key_without_padding_is_accepted() -> None:
         ("TRANSFER_OUT", "TRANSFER_OUT_ACCOUNT_TRANSFER", ("transfer", "", "")),
         ("INCOME", "INCOME_WAGES", ("income", "", "")),
         ("", "TRANSFER_IN_DEPOSIT", ("transfer", "", "")),  # primary missing: taken from detailed
+        ("TRAVEL", "TRAVEL_FLIGHTS", ("spending", "Travel", "Flights")),
+        ("TRAVEL", "TRAVEL_RENTAL_CARS", ("spending", "Travel", "")),  # no Car Rental in this list
         ("", "", ("spending", "Other", "")),
     ],
 )
@@ -508,3 +511,41 @@ def test_unchanged_transactions_are_not_rewritten(
 
     assert item.changes.modified == 0
     assert api.calls.count("write_values") == writes_before
+
+
+def test_travel_charges_imported_as_transportation_are_moved_once(
+    store: SqliteTokenStore, repository: SheetsRepository
+) -> None:
+    from app.storage.models import MerchantRule
+
+    provider = FakeProvider()
+    link(provider, store, repository)
+    old_way = [
+        plaid_tx("air", "420.00", "TRAVEL_FLIGHTS", name="AIR CANADA 0141234"),
+        plaid_tx("hotel", "180.00", "TRAVEL_LODGING", name="MARRIOTT 11"),
+        plaid_tx("bus", "12.00", "TRAVEL_OTHER_TRAVEL", name="COMMUTER BUS"),
+    ]
+    rows = [
+        service.to_transaction(t, CATEGORIES, "CAD").model_copy(
+            update={"category": "Transportation", "subcategory": ""}
+        )
+        for t in old_way
+    ]
+    repository.apply_bank_changes(rows, [])
+    repository.save_merchant_rule(
+        MerchantRule(merchant="commuter bus", kind="spending", category="Transportation", subcategory="")
+    )
+    store.save_cursor(USER, "item-1", "c0", NOW, data_version=3)
+
+    service.sync_all(provider, store, repository, USER, CATEGORIES, "CAD", NOW)
+
+    by_id = {
+        t.transaction_id: (t.category, t.subcategory)
+        for t in repository.list_bank_transactions(BankTransactionFilter())
+    }
+    assert by_id == {
+        "air": ("Travel", "Flights"),
+        "hotel": ("Travel", "Lodging"),
+        "bus": ("Transportation", ""),  # the user chose Transportation for this merchant
+    }
+    assert store.list_items(USER)[0].data_version == service.DATA_VERSION
