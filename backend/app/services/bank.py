@@ -45,15 +45,17 @@ ItemStatus = Literal["ok", "needs_relink", "error"]
 # 7: Plaid's name must agree with the bank's text both ways, on all its distinctive words
 #    ("Triple O Construction") and on the bank's first word ("Whistler's Inn" for EARLS WHISTLER).
 # 8: Plaid's VERY_HIGH merchant matches need only one shared word ("REAL CDN SUPERS").
-DATA_VERSION = 8
+# 9: Plaid's education category maps to Education › Tuition & Courses (was Kids › School Supplies).
+DATA_VERSION = 9
 # Versions below this read the history again from the start; newer steps only fix rows in place.
 REIMPORT_BELOW = 8
 # Category mapping changes applied to charges already imported:
-# (version that introduced it, Plaid category prefix, category the old mapping gave).
-CATEGORY_MOVES: tuple[tuple[int, str, str], ...] = (
-    (4, "TRAVEL", "Transportation"),
-    (5, "PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS", "Personal Care"),
-    (5, "GENERAL_MERCHANDISE_SPORTING_GOODS", "Other"),
+# (version that introduced it, Plaid category prefix, category and subcategory the old mapping gave).
+CATEGORY_MOVES: tuple[tuple[int, str, str, str], ...] = (
+    (4, "TRAVEL", "Transportation", ""),
+    (5, "PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS", "Personal Care", ""),
+    (5, "GENERAL_MERCHANDISE_SPORTING_GOODS", "Other", ""),
+    (9, "GENERAL_SERVICES_EDUCATION", "Kids", "School Supplies"),
 )
 # "Sync" also asks Plaid to read the bank right away, at most this often per bank (Plaid bills
 # /transactions/refresh per request outside the Trial plan).
@@ -273,7 +275,7 @@ def _sync_item(
         ]
         removed = [transaction_id for page in pages for transaction_id in page.removed]
         changes = repository.apply_bank_changes(upserts, removed)
-        moves = [(prefix, old) for version, prefix, old in CATEGORY_MOVES if item.data_version < version]
+        moves = [move[1:] for move in CATEGORY_MOVES if item.data_version < move[0]]
         if moves:
             _move_charges(repository, categories, moves)
         bank_updated_at = provider.bank_updated_at(item.access_token)
@@ -298,17 +300,23 @@ def _sync_item(
     )
 
 
-def _move_charges(repository: Repository, categories: list[Category], moves: list[tuple[str, str]]) -> None:
+def _move_charges(
+    repository: Repository, categories: list[Category], moves: list[tuple[str, str, str]]
+) -> None:
     """Move charges imported under an older mapping: a charge whose Plaid category starts with one
-    of `moves`' prefixes and still shows that old category (no subcategory, no remembered category
-    for the merchant) gets the current mapping. Charges the user changed are left alone."""
+    of `moves`' prefixes and still shows exactly that old category and subcategory (and has no
+    remembered category for the merchant) gets the current mapping. Charges the user changed are
+    left alone."""
     rules = {rule.merchant for rule in repository.list_merchant_rules()}
     updates: dict[str, dict[str, str]] = {}
     for t in repository.list_bank_transactions(BankTransactionFilter()):
         plaid = t.plaid_category.upper()
-        if t.kind != "spending" or t.subcategory or merchant_key(t.merchant) in rules:
+        if t.kind != "spending" or merchant_key(t.merchant) in rules:
             continue
-        if not any(plaid.startswith(prefix) and t.category == old for prefix, old in moves):
+        if not any(
+            plaid.startswith(prefix) and t.category == old and t.subcategory == old_sub
+            for prefix, old, old_sub in moves
+        ):
             continue
         mapped = map_category(plaid, plaid, categories)
         if mapped.category != t.category:

@@ -100,6 +100,7 @@ DEFAULT_CATEGORIES: tuple[tuple[str, str], ...] = (
     ("Pets", "🐾"),
     ("Travel", "✈️"),
     ("Hobbies", "🎨"),
+    ("Education", "🎓"),
     ("Tax & Fees", "🧾"),
     ("Other", "📦"),
 )
@@ -144,6 +145,13 @@ DEFAULT_SUBCATEGORIES: dict[str, tuple[str, ...]] = {
         "Music & Instruments",
         "Gardening & Plants",
         "Classes & Clubs",
+    ),
+    "Education": (
+        "Tuition & Courses",
+        "Books & Materials",
+        "Tutoring",
+        "Online Learning & Apps",
+        "Exams & Certifications",
     ),
     "Tax & Fees": ("Sales Tax", "Deposits & Eco Fees", "Bag Fees", "Tips & Service"),
 }
@@ -207,7 +215,7 @@ SUBCATEGORY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("Entertainment", "Events"): "Concerts, sports games, museums, attractions",
     ("Entertainment", "Subscriptions"): "Streaming and other entertainment subscriptions",
     ("Kids", "Toys"): "Toys and games for children",
-    ("Kids", "School Supplies"): "School supplies and school fees",
+    ("Kids", "School Supplies"): "Children's school supplies: pencils, notebooks, backpacks",
     ("Kids", "Baby Care"): "Diapers, wipes, formula, baby food",
     ("Kids", "Activities"): "Lessons, camps, children's activities",
     ("Pets", "Pet Food"): "Pet food and treats",
@@ -235,6 +243,12 @@ SUBCATEGORY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("Hobbies", "Music & Instruments"): "Musical instruments, sheet music, music gear and repairs",
     ("Hobbies", "Gardening & Plants"): "Plants, seeds, soil, and garden tools for the hobby",
     ("Hobbies", "Classes & Clubs"): "Adult classes, workshops, hobby clubs and memberships",
+    # Education is learning for school, work, or a skill; leisure classes stay in Hobbies.
+    ("Education", "Tuition & Courses"): "Tuition, school and course fees, for adults or children",
+    ("Education", "Books & Materials"): "Textbooks, study guides, and course materials",
+    ("Education", "Tutoring"): "Tutors and private lessons for school subjects",
+    ("Education", "Online Learning & Apps"): "Online courses and learning apps (Coursera, Duolingo)",
+    ("Education", "Exams & Certifications"): "Exam, test, licence, and certification fees",
 }
 
 # Defaults added after the subcategories tab first shipped. Appended to existing spreadsheets on
@@ -244,11 +258,17 @@ ADDED_SUBCATEGORIES: tuple[tuple[str, str], ...] = (
     ("Groceries", "Rice, Grains & Cereal"),
     *(("Travel", name) for name in DEFAULT_SUBCATEGORIES["Travel"]),
     *(("Hobbies", name) for name in DEFAULT_SUBCATEGORIES["Hobbies"]),
+    *(("Education", name) for name in DEFAULT_SUBCATEGORIES["Education"]),
 )
 # Defaults renamed since they first shipped: (category, old name) → new name. Applied on migration to
 # an active row with the old name when no row with the new name exists. Saved items keep the old name.
 RENAMED_SUBCATEGORIES: dict[tuple[str, str], str] = {
     ("Groceries", "Produce"): "Fresh Fruit & Vegetables",
+}
+# Default descriptions changed since they first shipped: (category, name) → the old text. A row that
+# still has the old text (the user never edited it) gets the current default.
+OLD_DESCRIPTIONS: dict[tuple[str, str], str] = {
+    ("Kids", "School Supplies"): "School supplies and school fees",  # fees moved to Education
 }
 
 TAX_CATEGORY = "Tax & Fees"
@@ -256,7 +276,7 @@ TAX_CATEGORY = "Tax & Fees"
 # with that name already exists (a row the user soft-deleted counts, so it isn't re-added).
 REQUIRED_CATEGORIES: tuple[tuple[str, str], ...] = ((TAX_CATEGORY, "🧾"),)
 # Default categories added after the first release, appended to existing spreadsheets the same way.
-ADDED_CATEGORIES: tuple[tuple[str, str], ...] = (("Travel", "✈️"), ("Hobbies", "🎨"))
+ADDED_CATEGORIES: tuple[tuple[str, str], ...] = (("Travel", "✈️"), ("Hobbies", "🎨"), ("Education", "🎓"))
 
 
 def utc_now_iso() -> str:

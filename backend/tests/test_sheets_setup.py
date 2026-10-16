@@ -1,3 +1,6 @@
+import threading
+import time
+
 import pytest
 
 from app.sheets import setup
@@ -53,7 +56,7 @@ def test_first_sign_in_seeds_default_categories() -> None:
 
     rows = api.sheet(spreadsheet_id, "categories").rows[1:]
     assert rows == [[name, icon, NOW, "FALSE"] for name, icon in DEFAULT_CATEGORIES]
-    assert len(rows) == 16
+    assert len(rows) == 17
     assert ["Tax & Fees", "🧾", NOW, "FALSE"] in rows
 
 
@@ -128,6 +131,7 @@ def test_migration_adds_missing_tab_and_columns_and_keeps_data() -> None:
         ["Tax & Fees", "🧾", NOW, "FALSE"],
         ["Travel", "✈️", NOW, "FALSE"],
         ["Hobbies", "🎨", NOW, "FALSE"],
+        ["Education", "🎓", NOW, "FALSE"],
     ]
     # the new subcategories tab starts with the defaults
     subcategories = api.sheet("sheet-1", "subcategories").rows
@@ -185,6 +189,23 @@ def test_defaults_are_renamed_and_described_once() -> None:
         ["Groceries", "Bakery", NOW, "FALSE", describe("Groceries", "Bakery")],
     ]
     assert "write_values" not in api.calls and "append_values" not in api.calls  # nothing left to do
+
+
+def test_old_default_description_is_replaced_but_an_edited_one_is_kept() -> None:
+    api = FakeSheetsApi()
+    existing_spreadsheet_with_subcategories(
+        api,
+        [
+            ["Kids", "School Supplies", "School supplies and school fees", NOW, "FALSE"],  # old default
+            ["Kids", "Toys", "LEGO mostly", NOW, "FALSE"],  # the user's own text
+        ],
+        header=list(TABS["subcategories"]),
+    )
+
+    ensure_spreadsheet(api, NOW)
+
+    rows = api.sheet("sheet-1", "subcategories").rows[1:3]
+    assert [row[2] for row in rows] == [describe("Kids", "School Supplies"), "LEGO mostly"]
 
 
 def test_user_choices_about_defaults_are_respected() -> None:
@@ -245,19 +266,25 @@ def test_required_category_is_added_once() -> None:
     ensure_spreadsheet(api, NOW)
 
     names = [row[0] for row in api.sheet("sheet-1", "categories").rows[1:]]
-    assert names == ["Groceries", "Tax & Fees", "Travel", "Hobbies"]
+    assert names == ["Groceries", "Tax & Fees", "Travel", "Hobbies", "Education"]
     assert api.write_calls == []
 
 
 def test_soft_deleted_required_category_is_not_re_added() -> None:
     api = FakeSheetsApi()
     existing_spreadsheet_with_categories(
-        api, [["tax & fees", "🧾", NOW, "TRUE"], ["travel", "✈️", NOW, "TRUE"], ["hobbies", "🎨", NOW, "TRUE"]]
+        api,
+        [
+            ["tax & fees", "🧾", NOW, "TRUE"],
+            ["travel", "✈️", NOW, "TRUE"],
+            ["hobbies", "🎨", NOW, "TRUE"],
+            ["education", "🎓", NOW, "TRUE"],
+        ],
     )
 
     ensure_spreadsheet(api, NOW)
 
-    assert len(api.sheet("sheet-1", "categories").rows) == 4
+    assert len(api.sheet("sheet-1", "categories").rows) == 5
     assert api.write_calls == []
 
 
@@ -283,3 +310,52 @@ def test_migration_widens_grid_when_new_columns_do_not_fit() -> None:
     items = api.sheet("sheet-1", "items")
     assert items.column_count == len(TABS["items"])
     assert items.rows[0] == list(TABS["items"])
+
+
+def test_duplicate_added_defaults_are_soft_deleted() -> None:
+    api = FakeSheetsApi()
+    existing_spreadsheet_with_categories(
+        api,
+        [
+            ["Groceries", "🛒", NOW, "FALSE"],
+            ["Groceries", "🛒", NOW, "FALSE"],  # the user's own duplicate: not a default the app adds
+            ["Education", "🎓", "old", "FALSE"],
+            ["Education", "🎓", "old", "FALSE"],  # appended twice by two migrations at once
+        ],
+    )
+    subcategories = api.sheet("sheet-1", "subcategories").rows
+    subcategories.append(["Education", "Tutoring", "x", "old", "FALSE"])  # a second copy
+
+    ensure_spreadsheet(api, NOW)
+
+    categories = api.sheet("sheet-1", "categories").rows[1:]
+    assert [(row[0], row[3]) for row in categories if row[0] in ("Groceries", "Education")] == [
+        ("Groceries", "FALSE"),
+        ("Groceries", "FALSE"),
+        ("Education", "FALSE"),
+        ("Education", "TRUE"),
+    ]
+    tutoring = [row for row in api.sheet("sheet-1", "subcategories").rows if row[1] == "Tutoring"]
+    assert [row[4] for row in tutoring] == ["FALSE", "TRUE"]
+
+
+def test_requests_migrating_at_once_add_defaults_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(setup, "_migrated", set())
+    api = FakeSheetsApi()
+    existing_spreadsheet_with_categories(api, [["Groceries", "🛒", NOW, "FALSE"]])
+    real_read = api.read_values
+
+    def slow_read(spreadsheet_id: str, range_: str) -> list[list[str]]:
+        rows = real_read(spreadsheet_id, range_)
+        time.sleep(0.05)  # without the lock, the other request reads before this one writes
+        return rows
+
+    monkeypatch.setattr(api, "read_values", slow_read)
+    threads = [threading.Thread(target=migrate_once, args=(api, "sheet-1", NOW)) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    names = [row[0] for row in api.sheet("sheet-1", "categories").rows[1:]]
+    assert names.count("Education") == 1

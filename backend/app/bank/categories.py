@@ -62,7 +62,7 @@ DETAILED: dict[str, tuple[str, str]] = {
     "ENTERTAINMENT_MUSIC_AND_AUDIO": ("Entertainment", "Books & Music"),
     "ENTERTAINMENT_SPORTING_EVENTS_AMUSEMENT_PARKS_AND_MUSEUMS": ("Entertainment", "Events"),
     "GENERAL_SERVICES_CHILDCARE": ("Kids", "Activities"),
-    "GENERAL_SERVICES_EDUCATION": ("Kids", "School Supplies"),
+    "GENERAL_SERVICES_EDUCATION": ("Education", "Tuition & Courses"),
     "PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS": ("Hobbies", "Sports & Fitness"),
     "GENERAL_MERCHANDISE_SPORTING_GOODS": ("Hobbies", "Sports & Fitness"),
     "TRAVEL_FLIGHTS": ("Travel", "Flights"),

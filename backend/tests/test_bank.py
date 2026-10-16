@@ -37,6 +37,8 @@ USER = "google-sub-1"
 CATEGORIES = [
     Category(name="Travel", icon="", subcategories=["Flights", "Lodging"]),
     Category(name="Hobbies", icon="", subcategories=["Sports & Fitness"]),
+    Category(name="Education", icon="", subcategories=["Tuition & Courses"]),
+    Category(name="Kids", icon="", subcategories=["School Supplies"]),
     Category(name="Groceries", icon="", subcategories=["Drinks"]),
     Category(name="Dining Out", icon="", subcategories=["Restaurants", "Coffee & Cafés"]),
     Category(name="Transportation", icon="", subcategories=["Fuel"]),
@@ -201,6 +203,7 @@ def test_key_without_padding_is_accepted() -> None:
             "PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS",
             ("spending", "Hobbies", "Sports & Fitness"),
         ),
+        ("GENERAL_SERVICES", "GENERAL_SERVICES_EDUCATION", ("spending", "Education", "Tuition & Courses")),
         ("TRAVEL", "TRAVEL_RENTAL_CARS", ("spending", "Travel", "")),  # no Car Rental in this list
         ("", "", ("spending", "Other", "")),
     ],
@@ -586,4 +589,34 @@ def test_gym_and_sporting_goods_charges_move_to_hobbies_once(
         "gym": ("Hobbies", "Sports & Fitness"),
         "skis": ("Hobbies", "Sports & Fitness"),
         "hair": ("Personal Care", ""),
+    }
+
+
+def test_education_charges_move_from_kids_once(store: SqliteTokenStore, repository: SheetsRepository) -> None:
+    provider = FakeProvider()
+    link(provider, store, repository)
+    old = [
+        ("course", "GENERAL_SERVICES_EDUCATION", "Kids", "School Supplies"),
+        ("tuition", "GENERAL_SERVICES_EDUCATION", "Kids", ""),  # the user removed the subcategory
+        ("daycare", "GENERAL_SERVICES_CHILDCARE", "Kids", "School Supplies"),  # not part of the move
+    ]
+    rows = [
+        service.to_transaction(plaid_tx(i, "50.00", code, name=i.upper()), CATEGORIES, "CAD").model_copy(
+            update={"category": category, "subcategory": subcategory}
+        )
+        for i, code, category, subcategory in old
+    ]
+    repository.apply_bank_changes(rows, [])
+    store.save_cursor(USER, "item-1", "c0", NOW, data_version=8)
+
+    service.sync_all(provider, store, repository, USER, CATEGORIES, "CAD", NOW)
+
+    by_id = {
+        t.transaction_id: (t.category, t.subcategory)
+        for t in repository.list_bank_transactions(BankTransactionFilter())
+    }
+    assert by_id == {
+        "course": ("Education", "Tuition & Courses"),
+        "tuition": ("Kids", ""),
+        "daycare": ("Kids", "School Supplies"),
     }
