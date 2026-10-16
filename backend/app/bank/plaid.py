@@ -56,6 +56,12 @@ class PersonalFinanceCategory(BaseModel):
     detailed: str = ""
 
 
+class Counterparty(BaseModel):
+    name: str = ""
+    type: str = ""
+    confidence_level: str | None = None
+
+
 class PlaidTransaction(BaseModel):
     transaction_id: str
     account_id: str
@@ -69,6 +75,13 @@ class PlaidTransaction(BaseModel):
     merchant_name: str | None = None
     pending: bool = False
     personal_finance_category: PersonalFinanceCategory | None = None
+    counterparties: list[Counterparty] = Field(default_factory=list)
+
+    @property
+    def merchant_confidence(self) -> str:
+        """Plaid's confidence in its merchant match: VERY_HIGH, HIGH, MEDIUM, LOW, UNKNOWN, or ""."""
+        merchant = next((c for c in self.counterparties if c.type == "merchant"), None)
+        return (merchant.confidence_level or "").upper() if merchant else ""
 
 
 class SyncPage(BaseModel):

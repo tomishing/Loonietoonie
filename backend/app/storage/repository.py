@@ -103,3 +103,11 @@ class Repository(Protocol):
     def save_merchant_rule(self, rule: MerchantRule) -> None:
         """Add or replace the remembered category for rule.merchant."""
         ...
+
+    def list_merchant_names(self) -> dict[str, str]:
+        """Learned merchant names {bank_key: name}."""
+        ...
+
+    def save_merchant_names(self, names: dict[str, str]) -> None:
+        """Add or replace learned names {bank_key: name}, in one write per kind of change."""
+        ...

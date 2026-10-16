@@ -8,7 +8,7 @@ automatic; the user can undo a match (NO_RECEIPT, which is remembered) or pick a
 from dataclasses import dataclass
 from decimal import Decimal
 
-from app.services.names import name_words
+from app.services.names import bank_key, name_words
 from app.services.scan import tolerance
 from app.storage.models import NO_RECEIPT, BankTransaction, BankTransactionFilter, Receipt, ReceiptFilter
 from app.storage.repository import Repository
@@ -137,7 +137,39 @@ def refresh_matches(repository: Repository) -> int:
     updates.update(find_matches(receipts, current))
     if updates:
         repository.set_bank_receipt_ids(updates)
+    matched = [
+        t.model_copy(update={"receipt_id": updates.get(t.transaction_id, t.receipt_id)}) for t in current
+    ]
+    learn_names(repository, matched, receipts)
     return len(updates)
+
+
+def learn_names(repository: Repository, transactions: list[BankTransaction], receipts: list[Receipt]) -> None:
+    """A receipt names its store better than the bank's cut-off text or Plaid's guess. For each
+    charge matched to a receipt whose store name shares a word with the charge, remember the
+    receipt's store name for that merchant (bank_key) and show it on all its charges.
+
+    Matches without a shared word (e.g. a Japanese store name against an English bank text) teach
+    nothing: an amount-only match could be wrong and would rename a whole merchant.
+    """
+    by_id = {r.receipt_id: r for r in receipts}
+    learned: dict[str, str] = {}
+    for t in sorted(transactions, key=lambda t: t.date):  # the latest receipt wins
+        receipt = by_id.get(t.receipt_id)
+        if receipt is not None and receipt.store.strip() and names_match(receipt.store, t):
+            key = bank_key(t.description)
+            if key:
+                learned[key] = receipt.store.strip()
+    known = repository.list_merchant_names()
+    changed = {key: name for key, name in learned.items() if known.get(key) != name}
+    repository.save_merchant_names(changed)
+    names = {**known, **changed}
+    renames = {
+        t.transaction_id: {"merchant": names[bank_key(t.description)]}
+        for t in transactions
+        if bank_key(t.description) in names and t.merchant != names[bank_key(t.description)]
+    }
+    repository.update_bank_fields(renames)
 
 
 class MatchError(Exception):

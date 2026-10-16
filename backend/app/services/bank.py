@@ -16,7 +16,7 @@ from app.bank.categories import map_category
 from app.bank.plaid import BankProvider, PlaidError, PlaidTransaction, SyncPage
 from app.bank.token_store import LinkedItem, TokenStore
 from app.services.matching import refresh_matches
-from app.services.names import display_name, merchant_key
+from app.services.names import bank_key, display_name, merchant_key
 from app.storage.models import (
     BankAccount,
     BankChanges,
@@ -42,9 +42,12 @@ ItemStatus = Literal["ok", "needs_relink", "error"]
 # 4: Plaid's travel categories map to Travel; charges imported as Transportation are moved once.
 # 5: gyms and sporting goods map to Hobbies › Sports & Fitness; moved the same way.
 # 6: Plaid's name must agree on a distinctive word, not a generic one ("City of Vancouver").
-DATA_VERSION = 6
+# 7: Plaid's name must agree with the bank's text both ways, on all its distinctive words
+#    ("Triple O Construction") and on the bank's first word ("Whistler's Inn" for EARLS WHISTLER).
+# 8: Plaid's VERY_HIGH merchant matches need only one shared word ("REAL CDN SUPERS").
+DATA_VERSION = 8
 # Versions below this read the history again from the start; newer steps only fix rows in place.
-REIMPORT_BELOW = 6
+REIMPORT_BELOW = 8
 # Category mapping changes applied to charges already imported:
 # (version that introduced it, Plaid category prefix, category the old mapping gave).
 CATEGORY_MOVES: tuple[tuple[int, str, str], ...] = (
@@ -92,15 +95,18 @@ def to_transaction(
     categories: list[Category],
     default_currency: str,
     rules: dict[str, MerchantRule] | None = None,
+    names: dict[str, str] | None = None,
 ) -> BankTransaction:
     """A Plaid transaction as a sheet row. A category the user chose for the merchant (`rules`,
-    by merchant_key) wins over Plaid's category."""
+    by merchant_key) wins over Plaid's category, and a name learned from a matched receipt
+    (`names`, by bank_key) wins over Plaid's and the bank's names."""
     category = plaid.personal_finance_category
     primary, detailed = (category.primary, category.detailed) if category else ("", "")
     mapped = map_category(primary, detailed, categories)
     currency = (plaid.iso_currency_code or plaid.unofficial_currency_code or default_currency).upper()
-    name = display_name(plaid.merchant_name or "", plaid.name)
-    rule = (rules or {}).get(merchant_key(name))
+    base = display_name(plaid.merchant_name or "", plaid.name, plaid.merchant_confidence)
+    name = (names or {}).get(bank_key(plaid.name), base)
+    rule = (rules or {}).get(merchant_key(name)) or (rules or {}).get(merchant_key(base))
     kind, category_name, subcategory = (
         (rule.kind, rule.category, rule.subcategory)
         if rule
@@ -259,8 +265,9 @@ def _sync_item(
         repository.save_bank_accounts(to_accounts(provider, item, default_currency))
         pages = _collect_pages(provider, item.access_token, start)
         rules = {rule.merchant: rule for rule in repository.list_merchant_rules()}
+        names = repository.list_merchant_names()
         upserts = [
-            to_transaction(t, categories, default_currency, rules)
+            to_transaction(t, categories, default_currency, rules, names)
             for page in pages
             for t in [*page.added, *page.modified]
         ]

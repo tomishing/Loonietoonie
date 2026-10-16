@@ -347,6 +347,33 @@ class SheetsRepository:
                 )
         return list(rules.values())  # a later row for the same merchant wins
 
+    def list_merchant_names(self) -> dict[str, str]:
+        names: dict[str, str] = {}
+        for row in _active(self._read("merchant_names")):
+            merchant, name = row.values.get("merchant", "").strip(), row.values.get("name", "").strip()
+            if merchant and name:
+                names[merchant] = name  # a later row for the same merchant wins
+        return names
+
+    def save_merchant_names(self, names: dict[str, str]) -> None:
+        if not names:
+            return
+        tab = self._read("merchant_names", fresh=True)
+        now = utc_now_iso()
+        rows = {row.values.get("merchant", "").strip(): row for row in _active(tab)}
+        writes = [
+            ("merchant_names", _with_values(rows[key], tab.headers, {"name": name, "updated_at": now}))
+            for key, name in names.items()
+            if key in rows
+        ]
+        new = [
+            {"merchant": key, "name": name, "updated_at": now, "deleted": FALSE}
+            for key, name in names.items()
+            if key not in rows
+        ]
+        self._write_rows(writes)
+        self._append("merchant_names", tab.headers, new)
+
     def save_merchant_rule(self, rule: MerchantRule) -> None:
         tab = self._read("merchant_categories", fresh=True)
         record = {

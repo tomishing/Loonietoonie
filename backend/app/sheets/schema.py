@@ -79,6 +79,8 @@ TABS: dict[str, tuple[str, ...]] = {
     ),
     # Categories the user chose for a merchant's bank charges (merchant = services/names.merchant_key).
     "merchant_categories": ("merchant", "kind", "category", "subcategory", "updated_at", "deleted"),
+    # Merchant names learned from matched receipts (merchant = services/names.bank_key).
+    "merchant_names": ("merchant", "name", "updated_at", "deleted"),
     "settings": ("key", "value", "updated_at"),
     "ocr_labels": ("receipt_id", "field", "model_value", "corrected_value"),
 }

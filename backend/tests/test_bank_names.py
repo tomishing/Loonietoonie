@@ -36,6 +36,8 @@ from tests.test_auth import make_settings
         ("RETAIL PURCHASE 3HLUY9U50000 Vancouver Metro", "Vancouver Metro"),
         ("GROWMUSHROO 2503276931, BC", "Growmushroo, BC"),
         ("GARYS KETTLE CORN Eagle Bay, BC", "Garys Kettle Corn Eagle Bay, BC"),
+        ("Amazon.ca*8S9F86GI3 866-216-1072, ON", "Amazon.ca, ON"),
+        ("INTL VISA DEB RETAIL PURCHASE IHERB IHERB.COM", "Iherb Iherb.Com"),
     ],
 )
 def test_clean_bank_text(text: str, expected: str) -> None:
@@ -55,6 +57,21 @@ def test_clean_bank_text(text: str, expected: str) -> None:
         ("City of Vancouver", "CITY BBY ROSEMARY BROWN ( BURNABY, BC", "City Bby Rosemary Brown Burnaby, BC"),
         ("City of Vancouver", "CITY OF VANCOUVER PARKING", "City of Vancouver"),
         ("Sushi Garden", "SUSHI GARDEN METROTOWN", "Sushi Garden"),
+        ("Triple O Construction", "TRIPLE O # 570 KINGSWAY BURNABY, BC", "Triple O Kingsway Burnaby, BC"),
+        ("Triple O Six", "RETAIL PURCHASE 001001001011 TRIPLE O'S #202", "Triple O's"),
+        ("Compass Autos LLC", "VISA DEBIT RETAIL PURCHASE COMPASS AUTOLOA 609610197310", "Compass Autoloa"),
+        ("Bath & Body Works", "RETAIL PURCHASE 607219291814 BATH BODY WOR", "Bath & Body Works"),  # cut short
+        ("Super Saver Gas", "RETAIL PURCHASE 274001001004 SUPER SAVE GAS", "Super Saver Gas"),
+        ("Shoppers Drug Mart", "SHOPPERS DRUG MART #2201 BURNABY, BC", "Shoppers Drug Mart"),
+        ("Whistler's Inn", "EARLS WHISTLER Whistler, BC", "Earls Whistler Whistler, BC"),
+        ("L M Hanna Co", "RETAIL PURCHASE 516820283245 HANNAM METROTOW", "Hannam Metrotow"),
+        ("Save-On-Foods", "SAVE ON FOODS #2228 BURNABY, BC", "Save-On-Foods"),
+        ("London Drug", "RETAIL PURCHASE 524316306168 LONDON DRUGS 06", "London Drug"),
+        ("IKEA", "IKEA COQUITLAM COQUITLAM, BC", "IKEA"),
+        ("A&W Restaurants", "A & W 340 VANCOUVER, BC", "A&W Restaurants"),
+        ("Amazon", "Amazon.ca*8S9F86GI3 866-216-1072, ON", "Amazon"),
+        ("Amazon", "AMAZON* 6C7XO5SE3 VANCOUVER, BC", "Amazon"),
+        ("iHerb", "INTL VISA DEB RETAIL PURCHASE IHERB IHERB.COM", "iHerb"),
         ("", "UBER *TRIP", "Uber *Trip"),
     ],
 )
@@ -184,4 +201,66 @@ def test_category_endpoint(client: TestClient, repository: SheetsRepository) -> 
     assert client.put(url, json={"category": "Nope"}).status_code == 422
     assert (
         client.put("/api/bank/transactions/zzz/category", json={"category": "Groceries"}).status_code == 404
+    )
+
+
+@pytest.mark.parametrize(
+    ("merchant", "description", "confidence", "expected"),
+    [
+        # Known chains the bank abbreviates: trusted at VERY_HIGH, not otherwise.
+        (
+            "Real Canadian Superstore",
+            "RETAIL PURCHASE 001001001018 REAL CDN SUPERS",
+            "VERY_HIGH",
+            "Real Canadian Superstore",
+        ),
+        (
+            "Real Canadian Superstore",
+            "RETAIL PURCHASE 001001001018 REAL CDN SUPERS",
+            "HIGH",
+            "Real Cdn Supers",
+        ),
+        ("Esso", "KELOWNA ESSO KELOWNA, BC", "VERY_HIGH", "Esso"),
+        (
+            "Amazon Kindle",
+            "Kindle Svcs*B96R85DW0 888-802-3080, WA 29.68 USD @ 1.403301",
+            "VERY_HIGH",
+            "Amazon Kindle",
+        ),
+        # Even VERY_HIGH needs one shared word: NYF is New York Fries, not New York Life.
+        ("New York Life", "NYF #3304 SURREY, BC", "VERY_HIGH", "Nyf Surrey, BC"),
+        # HIGH is where Plaid's wrong guesses were, so it gets the full check.
+        (
+            "Suzuyo America Inc.",
+            "SUZUYA JAPANESE MARKET BURNABY, BC",
+            "HIGH",
+            "Suzuya Japanese Market Burnaby, BC",
+        ),
+    ],
+)
+def test_very_high_confidence_needs_less_agreement(
+    merchant: str, description: str, confidence: str, expected: str
+) -> None:
+    assert display_name(merchant, description, confidence) == expected
+
+
+def test_merchant_confidence_is_read_from_counterparties() -> None:
+    t = PlaidTransaction.model_validate(
+        {
+            "transaction_id": "t",
+            "account_id": "a",
+            "amount": 1,
+            "date": "2026-10-01",
+            "counterparties": [
+                {"name": "Visa", "type": "payment_network", "confidence_level": "LOW"},
+                {"name": "Esso", "type": "merchant", "confidence_level": "VERY_HIGH"},
+            ],
+        }
+    )
+    assert t.merchant_confidence == "VERY_HIGH"
+    assert (
+        PlaidTransaction(
+            transaction_id="t", account_id="a", amount=Decimal(1), date=date(2026, 10, 1)
+        ).merchant_confidence
+        == ""
     )

@@ -6,9 +6,12 @@ from fastapi.testclient import TestClient
 
 from app.auth.dependencies import get_current_user
 from app.auth.session import SessionData
+from app.bank.plaid import PlaidTransaction
 from app.config import get_settings
 from app.main import app
+from app.services import bank
 from app.services.matching import candidates, find_matches, names_match, refresh_matches, set_match
+from app.services.names import bank_key
 from app.services.spending_sources import spending_records
 from app.services.summary import summarize
 from app.sheets.setup import ensure_spreadsheet
@@ -277,3 +280,70 @@ def test_unlink_can_remove_imported_transactions(repository: SheetsRepository) -
 
     assert removed == 1
     assert repository.list_bank_transactions(BankTransactionFilter()) == []
+
+
+# --- names learned from receipts ----------------------------------------------------
+
+
+def test_matched_receipt_names_the_merchant_on_all_its_charges(repository: SheetsRepository) -> None:
+    repository.apply_bank_changes(
+        [
+            charge("a", "18.40", "2026-10-06", "Triple Kingsway", "TRIPLE O'S KINGSWAY BURNABY, BC"),
+            charge("b", "9.10", "2026-09-20", "Triple Kingsway", "TRIPLE O'S KINGSWAY BURNABY, BC"),
+            charge("c", "4.00", "2026-10-06", "Starbucks", "STARBUCKS #1"),
+        ],
+        [],
+    )
+    save(repository, "Triple O's Kingsway", "2026-10-05", [("Burger", "18.40", "Dining Out")])
+
+    refresh_matches(repository)
+
+    by_id = {t.transaction_id: t for t in repository.list_bank_transactions(BankTransactionFilter())}
+    assert [by_id[i].merchant for i in "abc"] == ["Triple O's Kingsway", "Triple O's Kingsway", "Starbucks"]
+    assert repository.list_merchant_names() == {
+        bank_key("TRIPLE O'S KINGSWAY BURNABY, BC"): "Triple O's Kingsway"
+    }
+    # A new charge from the same place takes the learned name on import.
+    categories = repository.list_categories()
+    new = bank.to_transaction(
+        PlaidTransaction(
+            transaction_id="d",
+            account_id="acc",
+            amount=D("7.00"),
+            iso_currency_code="CAD",
+            date=date(2026, 10, 9),
+            name="TRIPLE O'S KINGSWAY BURNABY, BC",
+            merchant_name="Triple O",
+        ),
+        categories,
+        "CAD",
+        names=repository.list_merchant_names(),
+    )
+    assert new.merchant == "Triple O's Kingsway"
+
+
+def test_amount_only_match_teaches_no_name(repository: SheetsRepository) -> None:
+    repository.apply_bank_changes([charge("a", "12.00", "2026-10-06", "Seven", "7-ELEVEN #3341")], [])
+    r = save(repository, "セブン-イレブン", "2026-10-05", [("Onigiri", "12.00", "Groceries")])
+
+    refresh_matches(repository)
+
+    [transaction] = repository.list_bank_transactions(BankTransactionFilter())
+    assert transaction.receipt_id == r.receipt_id  # the only option, so it matches
+    assert transaction.merchant == "Seven"  # but the name is not learned
+    assert repository.list_merchant_names() == {}
+
+
+def test_a_newer_receipt_replaces_the_learned_name(repository: SheetsRepository) -> None:
+    text = "SAVE ON FOODS #123 VANCOUVER"
+    repository.apply_bank_changes([charge("a", "10.00", "2026-10-02", "Save On", text)], [])
+    save(repository, "Save On Foods", "2026-10-02", [("Milk", "10.00", "Groceries")])
+    refresh_matches(repository)
+    repository.apply_bank_changes([charge("b", "20.00", "2026-10-09", "Save On", text)], [])
+    save(repository, "Save-On-Foods Vancouver", "2026-10-09", [("Eggs", "20.00", "Groceries")])
+
+    refresh_matches(repository)
+
+    assert repository.list_merchant_names() == {bank_key(text): "Save-On-Foods Vancouver"}
+    merchants = {t.merchant for t in repository.list_bank_transactions(BankTransactionFilter())}
+    assert merchants == {"Save-On-Foods Vancouver"}
