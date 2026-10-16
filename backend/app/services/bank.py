@@ -46,7 +46,8 @@ ItemStatus = Literal["ok", "needs_relink", "error"]
 #    ("Triple O Construction") and on the bank's first word ("Whistler's Inn" for EARLS WHISTLER).
 # 8: Plaid's VERY_HIGH merchant matches need only one shared word ("REAL CDN SUPERS").
 # 9: Plaid's education category maps to Education › Tuition & Courses (was Kids › School Supplies).
-DATA_VERSION = 9
+# 10: electronics stores map to Household › Electronics & Appliances (was Other).
+DATA_VERSION = 10
 # Versions below this read the history again from the start; newer steps only fix rows in place.
 REIMPORT_BELOW = 8
 # Category mapping changes applied to charges already imported:
@@ -56,6 +57,7 @@ CATEGORY_MOVES: tuple[tuple[int, str, str, str], ...] = (
     (5, "PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS", "Personal Care", ""),
     (5, "GENERAL_MERCHANDISE_SPORTING_GOODS", "Other", ""),
     (9, "GENERAL_SERVICES_EDUCATION", "Kids", "School Supplies"),
+    (10, "GENERAL_MERCHANDISE_ELECTRONICS", "Other", ""),
 )
 # "Sync" also asks Plaid to read the bank right away, at most this often per bank (Plaid bills
 # /transactions/refresh per request outside the Trial plan).

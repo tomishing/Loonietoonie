@@ -34,6 +34,7 @@ DETAILED: dict[str, tuple[str, str]] = {
     "GENERAL_MERCHANDISE_SUPERSTORES": ("Household", ""),
     "GENERAL_MERCHANDISE_DISCOUNT_STORES": ("Household", ""),
     "GENERAL_MERCHANDISE_DEPARTMENT_STORES": ("Household", ""),
+    "GENERAL_MERCHANDISE_ELECTRONICS": ("Household", "Electronics & Appliances"),
     "HOME_IMPROVEMENT_FURNITURE": ("Household", "Furniture & Decor"),
     "HOME_IMPROVEMENT_HARDWARE": ("Household", "Tools & Hardware"),
     "HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE": ("Housing", "Repairs"),

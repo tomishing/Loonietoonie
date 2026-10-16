@@ -120,9 +120,16 @@ DEFAULT_SUBCATEGORIES: dict[str, tuple[str, ...]] = {
         "Drinks",
     ),
     "Dining Out": ("Restaurants", "Fast Food", "Coffee & Cafés", "Delivery", "Bars"),
-    "Household": ("Cleaning", "Paper Goods", "Kitchen", "Furniture & Decor", "Tools & Hardware"),
+    "Household": (
+        "Cleaning",
+        "Paper Goods",
+        "Kitchen",
+        "Furniture & Decor",
+        "Tools & Hardware",
+        "Electronics & Appliances",
+    ),
     "Transportation": ("Fuel", "Public Transit", "Taxi & Rideshare", "Parking", "Car Maintenance"),
-    "Utilities": ("Electricity", "Gas & Heating", "Water", "Internet", "Phone"),
+    "Utilities": ("Electricity", "Gas & Heating", "Water", "Internet", "Phone", "Software & Apps"),
     "Housing": ("Rent & Mortgage", "Repairs", "Insurance"),
     "Health": ("Pharmacy", "Vitamins & Supplements", "Medical & Dental", "Vision"),
     "Personal Care": ("Hair", "Skin Care", "Cosmetics", "Hygiene"),
@@ -185,6 +192,9 @@ SUBCATEGORY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("Household", "Kitchen"): "Cookware, utensils, food storage, foil and plastic wrap",
     ("Household", "Furniture & Decor"): "Furniture, bedding, towels, decorations",
     ("Household", "Tools & Hardware"): "Tools, light bulbs, batteries, hardware, garden supplies",
+    ("Household", "Electronics & Appliances"): (
+        "Computers, phones, tablets, TVs, printers and ink, cables, appliances, and their repairs"
+    ),
     ("Transportation", "Fuel"): "Gasoline, diesel, EV charging",
     ("Transportation", "Public Transit"): "Bus, subway, and train fares and passes",
     ("Transportation", "Taxi & Rideshare"): "Taxis, Uber, Lyft",
@@ -194,6 +204,11 @@ SUBCATEGORY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("Utilities", "Gas & Heating"): "Natural gas, heating oil, propane",
     ("Utilities", "Water"): "Water and sewer bills",
     ("Utilities", "Internet"): "Home internet",
+    # Tools you rely on; streaming and other fun subscriptions stay in Entertainment › Subscriptions.
+    (
+        "Utilities",
+        "Software & Apps",
+    ): "Software, AI, cloud storage, and app subscriptions (Office 365, Claude, iCloud)",
     ("Utilities", "Phone"): "Mobile and home phone plans",
     ("Housing", "Rent & Mortgage"): "Rent, mortgage payments, condo fees",
     ("Housing", "Repairs"): "Home repairs and maintenance, contractors",
@@ -259,6 +274,8 @@ ADDED_SUBCATEGORIES: tuple[tuple[str, str], ...] = (
     *(("Travel", name) for name in DEFAULT_SUBCATEGORIES["Travel"]),
     *(("Hobbies", name) for name in DEFAULT_SUBCATEGORIES["Hobbies"]),
     *(("Education", name) for name in DEFAULT_SUBCATEGORIES["Education"]),
+    ("Utilities", "Software & Apps"),
+    ("Household", "Electronics & Appliances"),
 )
 # Defaults renamed since they first shipped: (category, old name) → new name. Applied on migration to
 # an active row with the old name when no row with the new name exists. Saved items keep the old name.
