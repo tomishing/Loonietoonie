@@ -13,7 +13,7 @@ from gspread.exceptions import APIError
 from app.config import DEFAULT_CURRENCY
 from app.drive.receipts import upload_receipt_image
 from app.sheets.api import SheetsApi
-from app.sheets.schema import FALSE, TABS, TRUE, tab_range, utc_now_iso
+from app.sheets.schema import FALSE, TABS, TAX_CATEGORY, TRUE, tab_range, utc_now_iso
 from app.storage.models import (
     BankAccount,
     BankChanges,
@@ -116,7 +116,10 @@ class SheetsRepository:
                         descriptions=descriptions.get(name.casefold(), {}),
                     )
                 )
-        return categories
+        # "Tax & Fees" and the catch-all "Other" go last, in that order, wherever categories are
+        # listed, even when categories were added after them in the sheet (e.g. Travel, Hobbies).
+        last = {TAX_CATEGORY.casefold(): 1, "other": 2}
+        return sorted(categories, key=lambda c: last.get(c.name.casefold(), 0))
 
     # --- receipts ------------------------------------------------------------
 

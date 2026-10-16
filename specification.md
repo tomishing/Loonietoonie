@@ -168,7 +168,7 @@ Rules:
 
 ### Default categories
 
-Created with a new `categories` tab. Users can edit them later.
+Created with a new `categories` tab. Users can edit them later. Categories are listed in the tab's order, except that **Tax & Fees** and the catch-all **Other** are always listed last, in that order (in the app and in Claude's list), even when categories were added after them.
 
 | Icon | Name | Icon | Name |
 | --- | --- | --- | --- |

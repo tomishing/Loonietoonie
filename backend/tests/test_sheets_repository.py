@@ -116,3 +116,24 @@ def test_google_errors_become_storage_errors(monkeypatch: pytest.MonkeyPatch) ->
 
     with pytest.raises(StorageError):
         repo.list_categories()
+
+
+def test_tax_and_fees_then_other_are_listed_last() -> None:
+    repo, _ = make_repo(
+        [
+            ["name", "icon", "updated_at", "deleted"],
+            ["Groceries", "🛒", "", "FALSE"],
+            ["Tax & Fees", "🧾", "", "FALSE"],
+            ["Other", "📦", "", "FALSE"],
+            ["Travel", "✈️", "", "FALSE"],
+            ["Hobbies", "🎨", "", "FALSE"],
+        ]
+    )
+
+    assert [c.name for c in repo.list_categories()] == [
+        "Groceries",
+        "Travel",
+        "Hobbies",
+        "Tax & Fees",
+        "Other",
+    ]
