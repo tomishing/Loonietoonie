@@ -77,7 +77,7 @@ class Bank:
     def bank_updated_at(self, access_token: str) -> str:
         return ""
 
-    def create_link_token(self, user_id: str) -> str:
+    def create_link_token(self, user_id: str, access_token: str | None = None) -> str:
         return "link"
 
 

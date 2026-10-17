@@ -43,7 +43,10 @@ function PlaidLinkOpener({
 export function BankLinks() {
   const [status, setStatus] = useState<BankStatus | null>(null)
   const [loadError, setLoadError] = useState<string[] | null>(null)
-  const [linkToken, setLinkToken] = useState<string | null>(null)
+  // Plaid Link is open: for a new bank, or for signing in again to a linked one (reconnect).
+  const [link, setLink] = useState<{ token: string; reconnect?: { itemId: string; institution: string } } | null>(
+    null,
+  )
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice>(null)
 
@@ -62,15 +65,47 @@ export function BankLinks() {
     setNotice(null)
     setBusy('Opening Plaid…')
     try {
-      setLinkToken(await createBankLinkToken())
+      setLink({ token: await createBankLinkToken() })
     } catch (error) {
       setNotice({ tone: 'error', text: errorMessages(error).join(' ') })
       setBusy(null)
     }
   }
 
+  // Sign in again to the same link (Plaid update mode): no new link, so nothing is imported twice;
+  // the sync afterwards brings only what's new.
+  const startReconnect = async (itemId: string, institution: string) => {
+    setNotice(null)
+    setBusy('Opening Plaid…')
+    try {
+      setLink({ token: await createBankLinkToken(itemId), reconnect: { itemId, institution } })
+    } catch (error) {
+      setNotice({ tone: 'error', text: errorMessages(error).join(' ') })
+      setBusy(null)
+    }
+  }
+
+  const finishReconnect = async (institution: string) => {
+    setLink(null)
+    setBusy(`Updating ${institution || 'your bank'}…`)
+    try {
+      const outcome = await syncWithRefresh(setBusy)
+      const synced = describeSync(outcome)
+      setNotice(
+        synced.tone === 'ok'
+          ? { tone: 'ok', text: `${institution || 'Your bank'} is reconnected. ${synced.text}` }
+          : synced,
+      )
+    } catch (error) {
+      setNotice({ tone: 'error', text: errorMessages(error).join(' ') })
+    } finally {
+      setBusy(null)
+      load()
+    }
+  }
+
   const finishLink = async (publicToken: string) => {
-    setLinkToken(null)
+    setLink(null)
     setBusy('Importing your transactions…')
     try {
       const result = await linkBank(publicToken)
@@ -194,6 +229,22 @@ export function BankLinks() {
                   Unlink
                 </button>
               </div>
+              {item.needs_reconnect && (
+                <div className="notice notice-warn bank-reconnect" role="status">
+                  <p>
+                    {item.institution || 'The bank'} needs you to sign in again. Reconnect keeps this link, so only new
+                    transactions come in; please don't link it again.
+                  </p>
+                  <button
+                    type="button"
+                    className="button button-primary button-small"
+                    onClick={() => void startReconnect(item.item_id, item.institution)}
+                    disabled={busy !== null}
+                  >
+                    Reconnect
+                  </button>
+                </div>
+              )}
               <ul className="bank-accounts">
                 {item.accounts.map((account) => (
                   <li key={account.account_id}>
@@ -229,12 +280,15 @@ export function BankLinks() {
         Link a bank or credit card
       </button>
 
-      {linkToken && (
+      {link && (
         <PlaidLinkOpener
-          token={linkToken}
-          onSuccess={(publicToken) => void finishLink(publicToken)}
+          token={link.token}
+          onSuccess={(publicToken) =>
+            // Update mode needs no token exchange: the link and its access stay the same.
+            link.reconnect ? void finishReconnect(link.reconnect.institution) : void finishLink(publicToken)
+          }
           onExit={() => {
-            setLinkToken(null)
+            setLink(null)
             setBusy(null)
           }}
         />

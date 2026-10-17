@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,6 +17,7 @@ from app.bank.dependencies import get_bank_provider, get_token_store
 from app.bank.plaid import (
     PersonalFinanceCategory,
     PlaidAccount,
+    PlaidClient,
     PlaidError,
     PlaidTransaction,
     SyncPage,
@@ -81,8 +83,8 @@ class FakeProvider:
         self.calls: list[tuple[str, str]] = []
         self.removed: list[str] = []
 
-    def create_link_token(self, user_id: str) -> str:
-        return f"link-sandbox-{user_id}"
+    def create_link_token(self, user_id: str, access_token: str | None = None) -> str:
+        return f"link-update-{access_token}" if access_token else f"link-sandbox-{user_id}"
 
     def exchange_public_token(self, public_token: str) -> tuple[str, str]:
         if public_token == "bad":
@@ -349,6 +351,14 @@ def test_bank_that_needs_a_new_sign_in_is_reported(
     [item] = service.sync_all(provider, store, repository, USER, CATEGORIES, "CAD", NOW).items
 
     assert (item.status, item.error) == ("needs_relink", "ITEM_LOGIN_REQUIRED")
+    [linked] = service.list_linked(store, repository, USER)
+    assert linked.needs_reconnect is True
+    # Reconnect signs in again to the same link (update mode); the transactions and cursor stay.
+    token = service.create_link_token(provider, store, USER, "item-1")
+    assert token == "link-update-access-sandbox-secret"
+    service.sync_all(provider, store, repository, USER, CATEGORIES, "CAD", NOW)
+    [linked] = service.list_linked(store, repository, USER)
+    assert linked.needs_reconnect is False
 
 
 def test_unlink_revokes_and_keeps_history(store: SqliteTokenStore, repository: SheetsRepository) -> None:
@@ -395,12 +405,16 @@ def test_bank_api_flow(client: tuple[TestClient, FakeProvider], monkeypatch: pyt
     )
 
     assert http.post("/api/bank/link-token").json() == {"link_token": f"link-sandbox-{USER}"}
+    assert http.post("/api/bank/link-token", json={"item_id": "item-1"}).status_code == 404  # not linked
     linked = http.post("/api/bank/items", json={"public_token": "public-token"})
     assert linked.status_code == 201
     assert linked.json()["changes"]["added"] == 1
 
+    reconnect = http.post("/api/bank/link-token", json={"item_id": "item-1"})
+    assert reconnect.json() == {"link_token": "link-update-access-sandbox-secret"}
     status = http.get("/api/bank/items").json()
     assert status["enabled"] is True
+    assert status["items"][0]["needs_reconnect"] is False
     assert status["items"][0]["accounts"][0]["mask"] == "3333"
     assert http.post("/api/bank/sync").json()["items"][0]["status"] == "ok"
     [transaction] = http.get("/api/bank/transactions", params={"from": "2026-10-01"}).json()
@@ -658,3 +672,22 @@ def test_electronics_charges_move_from_other_once(
         "tv": ("Entertainment", ""),
         "gift": ("Other", ""),
     }
+
+
+def test_update_mode_link_token_sends_the_access_token_without_products(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = PlaidClient("id", "secret", "sandbox", ["CA"])
+    bodies: list[dict[str, Any]] = []
+
+    def post(path: str, body: dict[str, Any]) -> dict[str, Any]:
+        bodies.append(body)
+        return {"link_token": "link-x"}
+
+    monkeypatch.setattr(client, "_post", post)
+    client.create_link_token(USER)
+    client.create_link_token(USER, "access-old")
+
+    new, update = bodies
+    assert new["products"] == ["transactions"] and "access_token" not in new
+    assert update["access_token"] == "access-old" and "products" not in update

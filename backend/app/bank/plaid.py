@@ -93,7 +93,10 @@ class SyncPage(BaseModel):
 
 
 class BankProvider(Protocol):
-    def create_link_token(self, user_id: str) -> str: ...
+    def create_link_token(self, user_id: str, access_token: str | None = None) -> str:
+        """A Link token for a new link, or with `access_token`, for a new sign-in to an existing
+        link (update mode: the item, its transactions, and its sync cursor stay)."""
+        ...
 
     def exchange_public_token(self, public_token: str) -> tuple[str, str]:
         """Returns (access_token, item_id)."""
@@ -147,18 +150,19 @@ class PlaidClient:
             raise PlaidError(code, str(data.get("error_message") or ""), response.status_code)
         return data
 
-    def create_link_token(self, user_id: str) -> str:
-        data = self._post(
-            "/link/token/create",
-            {
-                "client_name": "LoonieToonie",
-                "user": {"client_user_id": user_id},
-                "products": ["transactions"],
-                "transactions": {"days_requested": DAYS_REQUESTED},
-                "country_codes": self._country_codes,
-                "language": "en",
-            },
-        )
+    def create_link_token(self, user_id: str, access_token: str | None = None) -> str:
+        body: dict[str, Any] = {
+            "client_name": "LoonieToonie",
+            "user": {"client_user_id": user_id},
+            "country_codes": self._country_codes,
+            "language": "en",
+        }
+        if access_token:
+            body["access_token"] = access_token  # update mode: products are already set
+        else:
+            body["products"] = ["transactions"]
+            body["transactions"] = {"days_requested": DAYS_REQUESTED}
+        data = self._post("/link/token/create", body)
         return str(data["link_token"])
 
     def exchange_public_token(self, public_token: str) -> tuple[str, str]:

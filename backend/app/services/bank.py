@@ -80,6 +80,8 @@ class LinkedInstitution(BaseModel):
     last_synced_at: str
     # When Plaid last read the bank (new transactions can't arrive before Plaid reads it again).
     bank_updated_at: str
+    # The bank asked for a new sign-in: the app shows Reconnect.
+    needs_reconnect: bool = False
     accounts: list[BankAccount]
 
 
@@ -155,8 +157,17 @@ def to_accounts(provider: BankProvider, item: LinkedItem, default_currency: str)
     ]
 
 
-def create_link_token(provider: BankProvider, user_id: str) -> str:
-    return provider.create_link_token(user_id)
+def create_link_token(
+    provider: BankProvider, store: TokenStore, user_id: str, item_id: str | None = None
+) -> str:
+    """A Link token for linking a new bank, or with `item_id`, for signing in again to that linked
+    bank (Plaid update mode). Reconnecting keeps the link: the next sync brings only what's new."""
+    if item_id is None:
+        return provider.create_link_token(user_id)
+    item = next((i for i in store.list_items(user_id) if i.item_id == item_id), None)
+    if item is None:
+        raise ItemNotFoundError(item_id)
+    return provider.create_link_token(user_id, item.access_token)
 
 
 def link_item(
@@ -211,6 +222,7 @@ def list_linked(store: TokenStore, repository: Repository, user_id: str) -> list
             institution=item.institution_name,
             last_synced_at=item.last_synced_at,
             bank_updated_at=item.bank_updated_at,
+            needs_reconnect=item.needs_reconnect,
             accounts=[account for account in accounts if account.item_id == item.item_id],
         )
         for item in store.list_items(user_id)
@@ -313,6 +325,8 @@ def _sync_item(
         bank_updated_at = provider.bank_updated_at(item.access_token)
     except PlaidError as exc:
         status: ItemStatus = "needs_relink" if exc.code in RELINK_CODES else "error"
+        if status == "needs_relink":
+            store.mark_needs_reconnect(item.user_id, item.item_id)
         return ItemSyncResult(
             item_id=item.item_id,
             institution=item.institution_name,

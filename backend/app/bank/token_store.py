@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS plaid_items (
     last_synced_at TEXT NOT NULL DEFAULT '',
     data_version INTEGER NOT NULL DEFAULT 1,
     bank_updated_at TEXT NOT NULL DEFAULT '',
-    refreshed_at TEXT NOT NULL DEFAULT ''
+    refreshed_at TEXT NOT NULL DEFAULT '',
+    needs_reconnect INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS plaid_items_user ON plaid_items (user_id);
 """
@@ -60,6 +61,9 @@ class LinkedItem:
     # Plaid to read it right away (/transactions/refresh).
     bank_updated_at: str = ""
     refreshed_at: str = ""
+    # The bank asked for a new sign-in (Plaid ITEM_LOGIN_REQUIRED and similar): the app offers
+    # Reconnect (Plaid update mode), which keeps the link, its transactions, and its sync cursor.
+    needs_reconnect: bool = False
 
 
 # Columns added after the first release of the table (added on start, existing rows get the default).
@@ -67,6 +71,7 @@ ADDED_COLUMNS = {
     "data_version": "INTEGER NOT NULL DEFAULT 1",
     "bank_updated_at": "TEXT NOT NULL DEFAULT ''",
     "refreshed_at": "TEXT NOT NULL DEFAULT ''",
+    "needs_reconnect": "INTEGER NOT NULL DEFAULT 0",
 }
 
 
@@ -96,6 +101,10 @@ class TokenStore(Protocol):
     ) -> None: ...
 
     def mark_refreshed(self, user_id: str, item_id: str, at: str) -> None: ...
+
+    def mark_needs_reconnect(self, user_id: str, item_id: str) -> None:
+        """The bank asked for a new sign-in; cleared by the next successful sync (save_cursor)."""
+        ...
 
     def delete_item(self, user_id: str, item_id: str) -> bool: ...
 
@@ -175,7 +184,7 @@ class SqliteTokenStore:
         with self._lock, self._connect() as connection:
             rows = connection.execute(
                 "SELECT item_id, institution_id, institution_name, access_token, cursor, created_at,"
-                " last_synced_at, data_version, bank_updated_at, refreshed_at"
+                " last_synced_at, data_version, bank_updated_at, refreshed_at, needs_reconnect"
                 " FROM plaid_items WHERE user_id = ? ORDER BY created_at, item_id",
                 (user_id,),
             ).fetchall()
@@ -192,6 +201,7 @@ class SqliteTokenStore:
                 data_version=data_version,
                 bank_updated_at=bank_updated_at,
                 refreshed_at=refreshed_at,
+                needs_reconnect=bool(needs_reconnect),
             )
             for (
                 item_id,
@@ -204,6 +214,7 @@ class SqliteTokenStore:
                 data_version,
                 bank_updated_at,
                 refreshed_at,
+                needs_reconnect,
             ) in rows
         ]
 
@@ -218,7 +229,7 @@ class SqliteTokenStore:
     ) -> None:
         with self._lock, self._connect() as connection:
             connection.execute(
-                "UPDATE plaid_items SET cursor = ?, last_synced_at = ?,"
+                "UPDATE plaid_items SET cursor = ?, last_synced_at = ?, needs_reconnect = 0,"
                 " data_version = COALESCE(?, data_version), bank_updated_at = COALESCE(?, bank_updated_at)"
                 " WHERE item_id = ? AND user_id = ?",
                 (cursor, synced_at, data_version, bank_updated_at, item_id, user_id),
@@ -229,6 +240,13 @@ class SqliteTokenStore:
             connection.execute(
                 "UPDATE plaid_items SET refreshed_at = ? WHERE item_id = ? AND user_id = ?",
                 (at, item_id, user_id),
+            )
+
+    def mark_needs_reconnect(self, user_id: str, item_id: str) -> None:
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                "UPDATE plaid_items SET needs_reconnect = 1 WHERE item_id = ? AND user_id = ?",
+                (item_id, user_id),
             )
 
     def delete_item(self, user_id: str, item_id: str) -> bool:

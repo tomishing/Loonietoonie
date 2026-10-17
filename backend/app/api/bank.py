@@ -31,6 +31,11 @@ class LinkToken(BaseModel):
     link_token: str
 
 
+class LinkTokenRequest(BaseModel):
+    # A linked bank to sign in to again (Reconnect); omitted for linking a new bank.
+    item_id: str | None = Field(default=None, max_length=200)
+
+
 class PublicToken(BaseModel):
     public_token: str = Field(min_length=1, max_length=500)
 
@@ -59,10 +64,16 @@ def list_items(user: UserDep, repository: RepositoryDep, settings: SettingsDep) 
 
 
 @router.post("/link-token", response_model=LinkToken)
-def create_link_token(user: UserDep, provider: ProviderDep) -> LinkToken:
-    """A short-lived token that opens Plaid Link in the app."""
+def create_link_token(
+    user: UserDep, provider: ProviderDep, store: StoreDep, body: LinkTokenRequest | None = None
+) -> LinkToken:
+    """A short-lived token that opens Plaid Link in the app: for a new bank, or with `item_id`,
+    for signing in again to a linked bank (Reconnect)."""
     try:
-        return LinkToken(link_token=service.create_link_token(provider, user.sub))
+        item_id = body.item_id if body else None
+        return LinkToken(link_token=service.create_link_token(provider, store, user.sub, item_id))
+    except service.ItemNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Bank link not found") from exc
     except PlaidError as exc:
         raise _bank_error(exc) from exc
 

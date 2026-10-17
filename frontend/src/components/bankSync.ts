@@ -38,7 +38,11 @@ export async function syncWithRefresh(onWaiting?: (text: string) => void): Promi
 export function describeSync({ results, added, asked }: SyncOutcome): SyncNotice {
   const relink = results.filter((r) => r.status === 'needs_relink')
   const failed = results.filter((r) => r.status === 'error')
-  if (relink.length) return { tone: 'warn', text: `${names(relink).join(', ')} needs you to unlink it and link it again.` }
+  if (relink.length)
+    return {
+      tone: 'warn',
+      text: `${names(relink).join(', ')} needs you to sign in again. Tap Reconnect under Bank accounts & cards on the Account page.`,
+    }
   if (failed.length) return { tone: 'error', text: `Couldn't update ${names(failed).join(', ')}. Try again later.` }
   if (added) return { tone: 'ok', text: `Imported ${added} new transaction${added === 1 ? '' : 's'}.` }
   // Nothing new: say when Plaid last read each bank, so "up to date" isn't misleading.

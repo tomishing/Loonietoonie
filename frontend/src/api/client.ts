@@ -466,6 +466,8 @@ export interface LinkedInstitution {
   last_synced_at: string
   /** When Plaid last read the bank (ISO 8601, "" if unknown). */
   bank_updated_at: string
+  /** The bank asked for a new sign-in: offer Reconnect (keeps the link and its transactions). */
+  needs_reconnect: boolean
   accounts: BankAccount[]
 }
 
@@ -514,8 +516,10 @@ export function getBankStatus(): Promise<BankStatus> {
   return apiGet<BankStatus>('/api/bank/items')
 }
 
-export async function createBankLinkToken(): Promise<string> {
-  return (await apiPost<{ link_token: string }>('/api/bank/link-token')).link_token
+/** A Plaid Link token for linking a new bank, or with itemId, for signing in again to a linked one. */
+export async function createBankLinkToken(itemId?: string): Promise<string> {
+  const body = itemId ? { item_id: itemId } : undefined
+  return (await apiPost<{ link_token: string }>('/api/bank/link-token', body)).link_token
 }
 
 export function linkBank(publicToken: string): Promise<ItemSyncResult> {
