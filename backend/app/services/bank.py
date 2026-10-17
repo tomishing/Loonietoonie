@@ -5,6 +5,7 @@ user's session, not a stored Google token. The sync cursor is saved only after t
 succeeds; a failed sync is simply repeated, and transaction IDs prevent duplicates.
 """
 
+import logging
 import threading
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -17,6 +18,7 @@ from app.bank.plaid import BankProvider, PlaidError, PlaidTransaction, SyncPage
 from app.bank.token_store import LinkedItem, TokenStore
 from app.services.matching import refresh_matches
 from app.services.names import bank_key, display_name, merchant_key
+from app.services.relink import merge_replaced_accounts
 from app.storage.models import (
     BankAccount,
     BankChanges,
@@ -32,6 +34,8 @@ MUTATION_DURING_PAGINATION = "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION"
 MAX_SYNC_ATTEMPTS = 3
 # The user has to sign in to the bank again through Plaid Link (update mode, later).
 RELINK_CODES = frozenset({"ITEM_LOGIN_REQUIRED", "PENDING_EXPIRATION", "PENDING_DISCONNECT"})
+
+logger = logging.getLogger(__name__)
 
 ItemStatus = Literal["ok", "needs_relink", "error"]
 
@@ -169,10 +173,34 @@ def link_item(
     access_token, item_id = provider.exchange_public_token(public_token)
     institution_id, institution_name = provider.get_institution(access_token)
     store.add_item(user_id, item_id, access_token, institution_id, institution_name, now)
-    item = next(i for i in store.list_items(user_id) if i.item_id == item_id)
-    result = _sync_item(provider, store, repository, item, categories, default_currency, now)
-    refresh_matches(repository)
+    with _user_locks[user_id]:
+        item = next(i for i in store.list_items(user_id) if i.item_id == item_id)
+        result = _sync_item(provider, store, repository, item, categories, default_currency, now)
+        replace_old_links(provider, store, repository, user_id)
+        refresh_matches(repository)
     return result
+
+
+def replace_old_links(
+    provider: BankProvider, store: TokenStore, repository: Repository, user_id: str
+) -> None:
+    """A bank linked again replaces its older link (services/relink.py): merge the old accounts'
+    transactions into the new ones, then unlink older links whose accounts were all replaced."""
+    items = sorted(store.list_items(user_id), key=lambda i: (i.created_at, i.item_id), reverse=True)
+    order = {item.item_id: index for index, item in enumerate(items)}
+    merged = merge_replaced_accounts(repository, order)
+    if merged.paired or merged.moved or merged.dropped:
+        logger.info(
+            "Merged a relinked bank: %d paired, %d moved, %d pending dropped",
+            merged.paired,
+            merged.moved,
+            merged.dropped,
+        )
+    for item_id in merged.replaced_items:
+        try:
+            unlink_item(provider, store, repository, user_id, item_id)
+        except PlaidError as exc:
+            logger.warning("Could not unlink a replaced bank link: %s", exc.code)
 
 
 def list_linked(store: TokenStore, repository: Repository, user_id: str) -> list[LinkedInstitution]:
@@ -235,6 +263,8 @@ def sync_all(
             requested = refresh and _request_refresh(provider, store, item, now)
             result = _sync_item(provider, store, repository, item, categories, default_currency, now)
             results.append(result.model_copy(update={"refresh_requested": requested}))
+        replace_old_links(provider, store, repository, user_id)
+        results = [r for r in results if r.item_id in {i.item_id for i in store.list_items(user_id)}]
         refresh_matches(repository)  # new charges may match receipts already saved
         return SyncResult(items=results)
 

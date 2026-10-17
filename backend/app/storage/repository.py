@@ -68,6 +68,10 @@ class Repository(Protocol):
         """Add or update accounts by account_id (a re-linked account is undeleted)."""
         ...
 
+    def list_removed_bank_accounts(self) -> list[BankAccount]:
+        """Accounts of unlinked items (soft-deleted rows)."""
+        ...
+
     def remove_bank_accounts(self, item_id: str) -> None:
         """Soft-delete the accounts of an unlinked item. Their transactions are kept."""
         ...

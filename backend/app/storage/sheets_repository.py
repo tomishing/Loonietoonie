@@ -248,6 +248,12 @@ class SheetsRepository:
     def list_bank_accounts(self) -> list[BankAccount]:
         return [_build_account(row.values) for row in _active(self._read("bank_accounts"))]
 
+    def list_removed_bank_accounts(self) -> list[BankAccount]:
+        active = {row.number for row in _active(self._read("bank_accounts"))}
+        return [
+            _build_account(row.values) for row in self._read("bank_accounts").rows if row.number not in active
+        ]
+
     def save_bank_accounts(self, accounts: list[BankAccount]) -> None:
         tab = self._read("bank_accounts", fresh=True)
         by_id = {row.values.get("account_id"): row for row in tab.rows}
