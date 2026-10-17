@@ -121,7 +121,7 @@ export function ChatPage() {
         {turns.length === 0 && (
           <div className="chat-welcome">
             <img src="/favicon.svg" alt="" width={56} height={56} />
-            <p>Hi! Ask me anything about your receipts. I look up the numbers in your spreadsheet.</p>
+            <p>Hi! Ask me anything about your spending. I look up the numbers from your receipts and bank and card transactions.</p>
             <div className="suggestions">
               {SUGGESTIONS.map((suggestion) => (
                 <button key={suggestion} type="button" className="chip suggestion" onClick={() => void ask(suggestion)}>
@@ -176,7 +176,7 @@ export function ChatPage() {
         </button>
       </form>
       <p className="muted field-note">
-        Answers come from your receipts. Your questions and spending data are sent to Claude (Anthropic) to answer them.
+        Answers come from your receipts and bank and card transactions. Your questions and spending data are sent to Claude (Anthropic) to answer them.
       </p>
     </section>
   )

@@ -1,4 +1,5 @@
-"""Spending chatbot: Claude answers questions about the user's receipts using read-only tools.
+"""Spending chatbot: Claude answers questions about the user's spending (scanned receipts and bank
+and card charges) using read-only tools.
 
 The server is stateless: the client sends the visible conversation (text only) with every
 request. Within one answer, the tool loop below only appends to the history, so Claude's
@@ -40,8 +41,9 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 SYSTEM_PROMPT = """\
 You are the assistant inside LoonieToonie, a household expense app. People scan their \
-receipts, and you help them understand their actual spending: where the money goes, how \
-it changes over time, and what is unusual. Be friendly, warm, and brief.
+receipts and link their bank and card accounts, and you help them understand their actual \
+spending: where the money goes, how it changes over time, and what is unusual. Be friendly, \
+warm, and brief.
 
 Ground every number in the tools. Use them to look things up instead of guessing, and \
 report amounts exactly as the tools return them, formatted with the currency (e.g. \
@@ -57,9 +59,13 @@ added on top of prices are items in the "Tax & Fees" category, and discounts are
 negative prices.
 - Spending also includes card and bank charges imported from linked accounts that no receipt \
 explains. Each one looks like a receipt with a single item: the merchant name, the amount, and \
-a category (find_receipts marks them "source": "bank"). A charge matched to a scanned receipt \
+a category (find_purchases marks them "source": "bank"). A charge matched to a scanned receipt \
 is not listed separately, so nothing counts twice. Transfers, card payments, and income are not \
 spending and never appear.
+- So in tool results, a "receipt" is any purchase: a scanned receipt or a bank or card charge. \
+When you talk to the person, call them purchases (or transactions), and if you say where the \
+numbers come from, say their receipts and bank and card transactions, not only receipts. Say \
+"receipt" only for a purchase with "source": "receipt".
 - "(not itemized)" is the part of a receipt total that its items don't cover.
 - Amounts in different currencies are never added together. Use the default currency \
 unless the person asks about another one.
@@ -116,11 +122,11 @@ TOOLS: list[BetaToolParam] = [
         },
     },
     {
-        "name": "find_receipts",
+        "name": "find_purchases",
         "description": (
-            "Individual receipts in a date range (newest first) with their items, optionally filtered "
-            "by category, subcategory, store, or item name. Returns the count and total of all matches "
-            f"and up to {MAX_RECEIPTS} receipts."
+            "Individual purchases in a date range (newest first): scanned receipts with their items and "
+            "bank or card charges, optionally filtered by category, subcategory, store, or item name. "
+            f"Returns the count and total of all matches and up to {MAX_RECEIPTS} purchases."
         ),
         "eager_input_streaming": True,
         "input_schema": {
@@ -133,7 +139,7 @@ TOOLS: list[BetaToolParam] = [
                 "subcategory": {"type": ["string", "null"]},
                 "store": {"type": ["string", "null"]},
                 "item_contains": {"type": ["string", "null"]},
-                "limit": {"type": ["integer", "null"], "description": f"Max receipts (1-{MAX_RECEIPTS})"},
+                "limit": {"type": ["integer", "null"], "description": f"Max purchases (1-{MAX_RECEIPTS})"},
             },
             "required": ["date_from", "date_to"],
             "additionalProperties": False,
@@ -160,7 +166,7 @@ TOOLS: list[BetaToolParam] = [
 
 TOOL_STATUS = {
     "spending_breakdown": "Adding up your spending…",
-    "find_receipts": "Looking through your receipts…",
+    "find_purchases": "Looking through your purchases…",
     "month_overview": "Checking the month…",
 }
 
@@ -189,7 +195,7 @@ def run_tool(queries: SpendingQueries, name: str, raw_input: object) -> tuple[st
     """Execute one tool call. Returns (JSON result, is_error). Inputs are validated first."""
     handlers: dict[str, tuple[type[BaseModel], Callable[[Any], dict[str, Any]]]] = {
         "spending_breakdown": (BreakdownInput, queries.spending_breakdown),
-        "find_receipts": (FindReceiptsInput, queries.find_receipts),
+        "find_purchases": (FindReceiptsInput, queries.find_receipts),
         "month_overview": (MonthOverviewInput, queries.month_overview),
     }
     if name not in handlers:

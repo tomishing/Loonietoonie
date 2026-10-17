@@ -133,7 +133,7 @@ def test_run_tool_reports_errors(name: str, tool_input: Any) -> None:
 
 
 def test_tool_definitions_are_read_only_and_stream_inputs() -> None:
-    assert {tool["name"] for tool in TOOLS} == {"spending_breakdown", "find_receipts", "month_overview"}
+    assert {tool["name"] for tool in TOOLS} == {"spending_breakdown", "find_purchases", "month_overview"}
     assert all(tool.get("eager_input_streaming") is True for tool in TOOLS)
 
 

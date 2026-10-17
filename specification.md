@@ -361,7 +361,7 @@ A scanned receipt and its card charge are the same purchase, so they must count 
 - **Fixing:** each bank row opens to show the match: **View receipt** and **Not this receipt**, or **Match a receipt** (receipts in the same currency within 7 days, best first, likely ones marked; `GET /api/bank/transactions/{id}/candidates`) and **No receipt** (`PUT /api/bank/transactions/{id}/receipt` with a receipt ID or `null`). Matching a receipt chosen by hand unmatches any other charge it was matched to. Receipt cards in the Receipts view show the card they were paid with ("💳 Plaid Credit Card •• 3333").
 - **Combined spending** (`app/services/spending_sources.py`): Patterns, Ask, and CSV export use receipts **plus** every spending charge that no existing receipt explains, as a one-item record (`receipt_id` `bank:<transaction_id>`, store and item = merchant, with the charge's category and subcategory). Matched charges are left out (the receipt and its items count instead). Transfers, card payments, and income never count. Refunds (negative amounts) lower their category. Category filters apply to charges by their category.
   - Patterns: charges count in totals, categories, the trend, and top stores, but not in "Bought most often". The period line says "includes N card & bank charges without a receipt" (`bank_transaction_count`).
-  - Ask: the prompt explains these records; `find_receipts` marks them `"source": "bank"`.
+  - Ask: the prompt explains these records; `find_purchases` marks them `"source": "bank"`. Tool results call every purchase a "receipt", so the prompt tells Claude to say purchases or transactions, and to say answers come from receipts and bank and card transactions.
   - CSV: both exports have a `source` column (`receipt` or `bank`).
 - **Android:** Plaid Link runs inside the app's WebView. Sandbox and most banks work; banks that sign in through their own app or site (OAuth) need a registered redirect URI and may need Plaid's Android SDK later.
 
@@ -382,7 +382,7 @@ Purpose: answer questions about actual spending ("What did I spend most on this 
 - **Model:** `ANTHROPIC_CHAT_MODEL` (default `claude-opus-5-5`, effort `medium`). `claude-haiku-5-5` is a much cheaper option. Refusal fallbacks are on: `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) re-runs a safety-declined request on Anthropic's recommended model; the frontend drops any partial text on a `reset` event.
 - **Numbers come from tools, not from the model's arithmetic.** Three read-only tools run pandas over the user's receipts (`app/services/spending_queries.py`), and their inputs are validated with Pydantic before running:
   - `spending_breakdown`: total and rows for a date range, grouped by category, subcategory (rows `Category › Subcategory`), store, month, item, or weekday; optional category, subcategory, store, and item filters
-  - `find_receipts`: matching receipts with their items and subcategories (newest first, up to 30) plus the count and total of all matches; same filters
+  - `find_purchases`: matching purchases, i.e. scanned receipts with their items and subcategories, and bank and card charges (newest first, up to 30) plus the count and total of all matches; same filters
   - `month_overview`: the dashboard numbers for one month (same code as `/api/summary`)
 - **Prompt:** a stable system prompt (cached) plus per-user facts after the cache breakpoint: today, default currency, receipt counts per currency, first/last receipt date, and category names. Rules in the prompt:
   - one currency at a time
