@@ -62,6 +62,20 @@ export function BankLinks() {
   useEffect(load, [load])
 
   const startLink = async () => {
+    // Linking an already linked bank again creates a second link (Plaid can't tell): it uses one
+    // of the Plaid links the plan allows, and a bank that asks for a new sign-in needs Reconnect.
+    const linked = status?.items ?? []
+    if (linked.length > 0) {
+      const names = linked.map((item) => item.institution || 'a bank').join(', ')
+      const reconnect = linked.some((item) => item.needs_reconnect)
+      const ok = window.confirm(
+        `Already linked: ${names}.\n\nLink a different bank or card. ` +
+          (reconnect
+            ? 'For a bank that asks you to sign in again, cancel and tap Reconnect instead.'
+            : 'If a linked bank asks you to sign in again, use its Reconnect button instead of linking it again.'),
+      )
+      if (!ok) return
+    }
     setNotice(null)
     setBusy('Opening Plaid…')
     try {
