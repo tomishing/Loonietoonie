@@ -512,8 +512,8 @@ Done for testing: the backend runs on the laptop and the phone reaches it over *
 
 ### Google sign-in
 
-- [ ] Add the production domain and `GOOGLE_REDIRECT_URI` to the OAuth client; add a home page, a privacy policy URL, and authorized domains to the consent screen.
-- [ ] **Publish** the OAuth app (Testing → In production); in Testing mode refresh tokens expire after 7 days. The scopes (`openid`, `email`, `profile`, `drive.file`) should be non-sensitive; complete brand verification if a logo is shown.
+- [ ] Add the production domain and `GOOGLE_REDIRECT_URI` to the OAuth client; add a home page, a privacy policy URL, and authorized domains to the consent screen. Done so far (2026-10-18): home page https://tomishing.github.io/Loonietoonie/ and privacy policy https://tomishing.github.io/Loonietoonie/privacy.html (GitHub Pages from `docs/`), authorized domain `tomishing.github.io`. Still to do: the production backend domain and its redirect URI. Keep `docs/privacy.html` in step with the app's data flows.
+- [x] **Publish** the OAuth app (Testing → In production; published 2026-10-18, no logo); in Testing mode refresh tokens expire after 7 days. The scopes (`openid`, `email`, `profile`, `drive.file`) should be non-sensitive; complete brand verification if a logo is shown.
 
 ### Plaid
 
