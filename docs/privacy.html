@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LoonieToonie Privacy Policy</title>
+    <meta name="description" content="What LoonieToonie collects, where it is stored, and who it is shared with." />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <span class="logo" aria-hidden="true">🙂</span>
+        <h1>Privacy policy</h1>
+      </header>
+      <p class="muted">Effective October 18, 2026</p>
+
+      <p>
+        LoonieToonie is a household expense app. This policy explains what information it uses, where that information
+        is kept, and who else receives it. In short: your spending data lives in your own Google Drive, LoonieToonie
+        keeps no database of it, and it is never sold or used for ads.
+      </p>
+
+      <h2>Google account and Drive</h2>
+      <p>You sign in with Google. LoonieToonie asks for these permissions only:</p>
+      <ul>
+        <li><strong>Your name, email address, and profile picture</strong>, to show who is signed in.</li>
+        <li>
+          <strong>Access to files LoonieToonie creates in your Google Drive</strong> (the <code>drive.file</code>
+          permission). It cannot see or change any other file in your Drive.
+        </li>
+      </ul>
+      <p>
+        With that permission, LoonieToonie creates a <strong>LoonieToonie</strong> folder and spreadsheet in your Drive. Your
+        receipts, their items, receipt photos, imported bank and card transactions, your categories, and your settings are
+        saved there. You can open, edit, export, or delete them in Google Drive at any time.
+      </p>
+      <p>
+        LoonieToonie's use of information received from Google APIs follows the
+        <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
+        including its Limited Use requirements.
+      </p>
+
+      <h2>Receipts</h2>
+      <ul>
+        <li>The text on a receipt photo or PDF is read <strong>on your device</strong>.</li>
+        <li>
+          That text is sent to <strong>Anthropic</strong> (Claude) to turn it into a store, date, items, and categories. The
+          photo itself is sent only if the text alone could not be read correctly, once.
+        </li>
+        <li>After you save a receipt, its photo is stored in your Google Drive folder.</li>
+      </ul>
+
+      <h2>Bank and credit card accounts</h2>
+      <ul>
+        <li>
+          If you link an account, you sign in to your bank through <strong>Plaid</strong>. Your bank username and password go
+          to Plaid, never to LoonieToonie. See <a href="https://plaid.com/legal/#end-user-privacy-policy">Plaid's End User
+          Privacy Policy</a>.
+        </li>
+        <li>
+          Plaid gives LoonieToonie an access key for the linked accounts. It is <strong>stored encrypted on the
+          LoonieToonie server</strong>, never in your spreadsheet, and is used only to import your transactions.
+        </li>
+        <li>Imported transactions (date, merchant, amount, category) are saved in your Google Drive spreadsheet.</li>
+        <li>Unlinking an account revokes LoonieToonie's access at Plaid and deletes its access key from the server.</li>
+      </ul>
+
+      <h2>Ask (spending questions)</h2>
+      <p>
+        When you ask a question in Ask, your question and the spending figures needed to answer it (totals, categories,
+        stores, and purchases from your spreadsheet) are sent to <strong>Anthropic</strong> to write the answer. The
+        conversation is kept only on your device until you close the app; the LoonieToonie server does not save it.
+      </p>
+
+      <h2>What the LoonieToonie server keeps</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Information</th>
+            <th>Kept?</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Receipts, transactions, photos, categories</td>
+            <td>No. They are in your Google Drive. The server reads them briefly to answer the app's requests.</td>
+          </tr>
+          <tr>
+            <td>Plaid access keys for linked accounts</td>
+            <td>Yes, encrypted, until you unlink the account.</td>
+          </tr>
+          <tr>
+            <td>Your sign-in</td>
+            <td>Kept on your device as an encrypted session, not in a server database.</td>
+          </tr>
+          <tr>
+            <td>Server logs</td>
+            <td>Which parts of the app were used and when, not receipt or transaction contents.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Who receives your information</h2>
+      <ul>
+        <li><strong>Google</strong>, which stores your spreadsheet and photos in your Drive.</li>
+        <li><strong>Anthropic</strong>, which reads receipt text (and occasionally a photo) and answers Ask questions.</li>
+        <li><strong>Plaid</strong>, which connects to your bank when you link an account.</li>
+      </ul>
+      <p>
+        Each handles data under its own terms. LoonieToonie does not sell, rent, or share your information with anyone
+        else, does not show ads, and does not use your data for advertising.
+      </p>
+
+      <h2>Deleting your data</h2>
+      <ul>
+        <li>Unlink your bank and card accounts on the Account page; this deletes their access keys from the server.</li>
+        <li>Delete the <strong>LoonieToonie</strong> folder from your Google Drive to remove your receipts and transactions.</li>
+        <li>
+          Remove LoonieToonie's access to your Google account at
+          <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
+        </li>
+      </ul>
+
+      <h2>Changes and contact</h2>
+      <p>
+        If this policy changes, the new version will be posted on this page with a new effective date. Questions can be
+        sent through the project's <a href="https://github.com/tomishing/Loonietoonie/issues">GitHub page</a>.
+      </p>
+
+      <footer><a href="index.html">LoonieToonie home</a></footer>
+    </main>
+  </body>
+</html>
