@@ -74,6 +74,9 @@ TABS: dict[str, tuple[str, ...]] = {
         "plaid_category",
         "pending",
         "receipt_id",
+        # TRUE when the user chose kind/category/subcategory; otherwise they follow Plaid's category
+        # (and the remembered merchant category) when Plaid updates the charge.
+        "edited",
         "updated_at",
         "deleted",
     ),

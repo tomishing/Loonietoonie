@@ -170,7 +170,7 @@ export function BankLinks() {
       return
     // A second question: test (Sandbox) or unwanted data can be removed with the link.
     const removeTransactions = window.confirm(
-      `Also remove the transactions imported from ${institution || 'this bank'}?\n\nOK: remove them from your spending and spreadsheet (marked deleted).\nCancel: keep them.`,
+      `Also remove the transactions imported from ${institution || 'this bank'}?\n\nOK: remove them from your spending and spreadsheet (marked deleted).\nCancel: keep them (choose this if you might link it again, so it continues the same history).`,
     )
     setBusy('Unlinking…')
     try {

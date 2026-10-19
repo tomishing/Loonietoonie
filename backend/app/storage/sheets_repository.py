@@ -297,8 +297,10 @@ class SheetsRepository:
                 new_records.append(record)
                 by_id[transaction.transaction_id] = SheetRow(number=-1, cells=[], values=record)
                 changes.added += 1
+                changes.added_ids.append(transaction.transaction_id)
             elif row.number > 0:
-                # Keep what the user may have changed; a row the user deleted stays deleted.
+                # Keep what the user may have changed; a row the user deleted stays deleted. (The
+                # bank service updates categories the user never chose: services/bank.py.)
                 bank_fields = {
                     k: v for k, v in _transaction_record(transaction, now).items() if k not in USER_FIELDS
                 }
@@ -406,6 +408,19 @@ class SheetsRepository:
         ]
         self._write_rows(writes)
         return len(writes)
+
+    def list_deleted_bank_transactions(self) -> list[BankTransaction]:
+        tab = self._read("bank_transactions")
+        active = {row.number for row in _active(tab)}
+        transactions: list[BankTransaction] = []
+        for row in tab.rows:
+            if row.number in active:
+                continue
+            try:
+                transactions.append(_build_transaction(row.values))
+            except (ValueError, InvalidOperation):
+                continue
+        return transactions
 
     def list_bank_transactions(self, filters: BankTransactionFilter) -> list[BankTransaction]:
         transactions: list[BankTransaction] = []
@@ -600,7 +615,7 @@ def _build_receipt(record: Record, item_records: list[Record]) -> Receipt:
 # --- bank rows ----------------------------------------------------------------
 
 # Columns the user may edit in the sheet (or the app sets itself); a bank update keeps them.
-USER_FIELDS = frozenset({"kind", "category", "subcategory", "receipt_id", "deleted"})
+USER_FIELDS = frozenset({"kind", "category", "subcategory", "receipt_id", "edited", "deleted"})
 KINDS = ("spending", "income", "transfer")
 
 
@@ -647,6 +662,7 @@ def _transaction_record(transaction: BankTransaction, now: str) -> Record:
         "plaid_category": transaction.plaid_category,
         "pending": TRUE if transaction.pending else FALSE,
         "receipt_id": transaction.receipt_id,
+        "edited": TRUE if transaction.edited else FALSE,
         "updated_at": now,
         "deleted": FALSE,
     }
@@ -668,4 +684,5 @@ def _build_transaction(record: Record) -> BankTransaction:
         plaid_category=record.get("plaid_category", ""),
         pending=record.get("pending", "").strip().upper() == TRUE,
         receipt_id=record.get("receipt_id", "").strip(),
+        edited=record.get("edited", "").strip().upper() == TRUE,
     )

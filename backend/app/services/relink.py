@@ -14,17 +14,31 @@ and last 4 digits. Its old transactions are merged into the new account:
 
 An older link that is still linked and whose accounts were all replaced is then unlinked. A second
 login at the same bank with other accounts (e.g. a partner's) has other last 4 digits and is kept.
+
+Choices also come back from the old accounts' soft-deleted rows (an earlier merge, or unlinking
+with "remove transactions" before linking again): a deleted copy whose kind/category/subcategory
+the user chose (`_is_choice`), or that has a receipt match, passes that choice to the new row; the
+newest link's copy wins. This only happens for rows just imported, or once for all rows
+(`recover_all`), and never to a row the user chose (edited).
 """
 
 from dataclasses import dataclass, field
 
+from app.bank.categories import map_category
 from app.services.names import bank_key
-from app.storage.models import BankAccount, BankTransaction, BankTransactionFilter
+from app.storage.models import (
+    NO_RECEIPT,
+    BankAccount,
+    BankTransaction,
+    BankTransactionFilter,
+    Category,
+)
 from app.storage.repository import Repository
 
 # A pending charge can post a few days after its pending date.
 PAIR_DAYS = 3
-CARRIED_FIELDS = ("kind", "category", "subcategory", "receipt_id")
+CARRIED_FIELDS = ("kind", "category", "subcategory", "receipt_id", "edited")
+OTHER = ("spending", "Other", "")
 
 
 @dataclass
@@ -32,6 +46,7 @@ class MergeResult:
     paired: int = 0  # old rows whose new copy took over (old row soft-deleted)
     moved: int = 0  # old rows moved to the new account
     dropped: int = 0  # old pending rows soft-deleted
+    recovered: int = 0  # new rows that got a choice back from a deleted copy
     replaced_items: set[str] = field(default_factory=set)  # older linked items fully replaced
 
 
@@ -63,15 +78,16 @@ def replacements(
 def _pair(
     old: list[BankTransaction], new: list[BankTransaction]
 ) -> list[tuple[BankTransaction, BankTransaction]]:
-    """One-to-one pairs of the same charge, closest dates first."""
+    """One-to-one pairs of the same charge (same amount, currency, and bank text, dates at most
+    PAIR_DAYS apart), closest dates first."""
+    by_key: dict[tuple[object, str, str], list[BankTransaction]] = {}
+    for n in new:
+        by_key.setdefault((n.amount, n.currency, bank_key(n.description)), []).append(n)
     candidates = [
         (abs((o.date - n.date).days), o.date, o.transaction_id, n.transaction_id, o, n)
         for o in old
-        for n in new
-        if o.amount == n.amount
-        and o.currency == n.currency
-        and abs((o.date - n.date).days) <= PAIR_DAYS
-        and bank_key(o.description) == bank_key(n.description)
+        for n in by_key.get((o.amount, o.currency, bank_key(o.description)), [])
+        if abs((o.date - n.date).days) <= PAIR_DAYS
     ]
     pairs: list[tuple[BankTransaction, BankTransaction]] = []
     used_old: set[str] = set()
@@ -85,10 +101,27 @@ def _pair(
     return pairs
 
 
-def merge_replaced_accounts(repository: Repository, item_order: dict[str, int]) -> MergeResult:
+def _choice(t: BankTransaction) -> tuple[str, str, str]:
+    return t.kind, t.category, t.subcategory
+
+
+def _plaid_choice(t: BankTransaction, categories: list[Category]) -> tuple[str, str, str]:
+    mapped = map_category(t.plaid_category, t.plaid_category, categories)
+    return mapped.kind, mapped.category, mapped.subcategory
+
+
+def merge_replaced_accounts(
+    repository: Repository,
+    item_order: dict[str, int],
+    categories: list[Category],
+    fresh_ids: set[str] | None = None,
+    recover_all: bool = False,
+) -> MergeResult:
     """Merge the transactions of replaced accounts into their new accounts (module docstring).
-    Returns what changed, including the linked items whose accounts were all replaced (the caller
-    unlinks them). Costs one read of each bank tab and at most two writes."""
+    `fresh_ids` are the rows imported just now; with `recover_all`, choices are recovered for all
+    rows the user hasn't changed. Returns what changed, including the linked items whose accounts
+    were all replaced (the caller unlinks them). Costs one read of each bank tab and at most two
+    writes."""
     active = repository.list_bank_accounts()
     replaced = replacements(active, repository.list_removed_bank_accounts(), item_order)
     result = MergeResult()
@@ -113,6 +146,7 @@ def merge_replaced_accounts(repository: Repository, item_order: dict[str, int]) 
         pairs = _pair(old_rows, by_account.get(new_id, []))
         for old, new in pairs:
             carried = {name: str(getattr(old, name)) for name in CARRIED_FIELDS}
+            carried["edited"] = "TRUE" if old.edited else "FALSE"
             if not carried["receipt_id"]:
                 carried["receipt_id"] = new.receipt_id  # a match made on the new row since
             if any(str(getattr(new, name)) != value for name, value in carried.items()):
@@ -130,7 +164,73 @@ def merge_replaced_accounts(repository: Repository, item_order: dict[str, int]) 
                 result.moved += 1
         result.paired += len(pairs)
 
+    _recover_choices(
+        repository, replaced, by_account, categories, fresh_ids or set(), recover_all, updates, result
+    )
     # Soft-delete first: a receipt carried to the new row must not stay on the old one too.
     repository.apply_bank_changes([], removed)
     repository.update_bank_fields(updates)
     return result
+
+
+def _is_choice(t: BankTransaction, categories: list[Category]) -> bool:
+    """The row's kind/category/subcategory were chosen by the user. Rows from before the edited
+    column count when they differ from Plaid's mapped category and aren't "Other": a row imported
+    while Plaid's category was vague (often a pending charge) keeps "Other" when Plaid improves its
+    category later, and that isn't a choice."""
+    if t.edited:
+        return True
+    choice = _choice(t)
+    return choice != _plaid_choice(t, categories) and choice != OTHER
+
+
+def _recover_choices(
+    repository: Repository,
+    replaced: dict[str, str],
+    by_account: dict[str, list[BankTransaction]],
+    categories: list[Category],
+    fresh_ids: set[str],
+    recover_all: bool,
+    updates: dict[str, dict[str, str]],
+    result: MergeResult,
+) -> None:
+    """Give new rows the user's choices from soft-deleted copies on replaced accounts (module
+    docstring). Adds to `updates`; rows already updated by the merge, and rows the user chose
+    (edited), are left as they are. When several old links have a copy, the newest link wins."""
+    if not fresh_ids and not recover_all:
+        return
+    deleted: dict[str, list[BankTransaction]] = {}
+    for t in repository.list_deleted_bank_transactions():
+        if t.account_id in replaced:
+            deleted.setdefault(t.account_id, []).append(t)
+    if not deleted:
+        return
+    # Accounts are appended as banks are linked: a later row is a newer link.
+    position = {a.account_id: i for i, a in enumerate(repository.list_removed_bank_accounts())}
+    taken = {
+        t.receipt_id
+        for rows in by_account.values()
+        for t in rows
+        if t.receipt_id and t.receipt_id != NO_RECEIPT
+    }
+    for old_id in sorted(deleted, key=lambda a: -position.get(a, len(position))):
+        targets = [
+            t
+            for t in by_account.get(replaced[old_id], [])
+            if t.transaction_id not in updates
+            and not t.edited
+            and (recover_all or t.transaction_id in fresh_ids)
+        ]
+        for donor, target in _pair(deleted[old_id], targets):
+            carried: dict[str, str] = {}
+            choice = _choice(donor)
+            if _is_choice(donor, categories) and choice != _choice(target):
+                carried.update(zip(("kind", "category", "subcategory"), choice, strict=True))
+                carried["edited"] = "TRUE"
+            receipt = donor.receipt_id
+            if receipt and not target.receipt_id and (receipt == NO_RECEIPT or receipt not in taken):
+                carried["receipt_id"] = receipt
+                taken.add(receipt)
+            if carried:
+                updates[target.transaction_id] = carried
+                result.recovered += 1

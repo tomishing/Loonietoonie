@@ -26,6 +26,7 @@ from app.bank.token_store import SqliteTokenStore, TokenStoreError, parse_key
 from app.config import get_settings
 from app.main import app
 from app.services import bank as service
+from app.services.bank_categories import set_category
 from app.sheets.setup import ensure_spreadsheet
 from app.storage.dependencies import get_repository
 from app.storage.models import BankTransactionFilter, Category
@@ -408,7 +409,7 @@ def test_bank_api_flow(client: tuple[TestClient, FakeProvider], monkeypatch: pyt
     assert http.post("/api/bank/link-token", json={"item_id": "item-1"}).status_code == 404  # not linked
     linked = http.post("/api/bank/items", json={"public_token": "public-token"})
     assert linked.status_code == 201
-    assert linked.json()["changes"]["added"] == 1
+    assert linked.json()["changes"] == {"added": 1, "modified": 0, "removed": 0}  # no internal IDs
 
     reconnect = http.post("/api/bank/link-token", json={"item_id": "item-1"})
     assert reconnect.json() == {"link_token": "link-update-access-sandbox-secret"}
@@ -691,3 +692,70 @@ def test_update_mode_link_token_sends_the_access_token_without_products(
     new, update = bodies
     assert new["products"] == ["transactions"] and "access_token" not in new
     assert update["access_token"] == "access-old" and "products" not in update
+
+
+def test_category_follows_plaid_until_the_user_chooses_one(
+    store: SqliteTokenStore, repository: SheetsRepository
+) -> None:
+    vague = "GENERAL_MERCHANDISE_OTHER_GENERAL_MERCHANDISE"
+    provider = FakeProvider()
+    provider.pages[""] = [
+        SyncPage(
+            added=[plaid_tx("t1", "4.00", vague, pending=True), plaid_tx("t2", "5.00", vague, pending=True)],
+            next_cursor="c1",
+            has_more=False,
+        )
+    ]
+    link(provider, store, repository)
+    set_category(repository, "t2", "spending", "Transportation", "", apply_to_merchant=False)
+    provider.pages["c1"] = [
+        SyncPage(
+            modified=[
+                plaid_tx("t1", "4.00", "FOOD_AND_DRINK_COFFEE"),
+                plaid_tx("t2", "5.00", "FOOD_AND_DRINK_COFFEE"),
+            ],
+            next_cursor="c2",
+            has_more=False,
+        )
+    ]
+
+    service.sync_all(provider, store, repository, USER, CATEGORIES, "CAD", NOW)
+
+    by_id = {t.transaction_id: t for t in repository.list_bank_transactions(BankTransactionFilter())}
+    assert (by_id["t1"].category, by_id["t1"].subcategory, by_id["t1"].edited) == (
+        "Dining Out",
+        "Coffee & Cafés",
+        False,
+    )
+    assert (by_id["t2"].category, by_id["t2"].edited) == ("Transportation", True)  # the user's choice stays
+
+
+def test_existing_rows_are_settled_once(store: SqliteTokenStore, repository: SheetsRepository) -> None:
+    provider = FakeProvider()
+    provider.pages[""] = [
+        SyncPage(
+            added=[
+                plaid_tx("stuck", "4.00", "FOOD_AND_DRINK_COFFEE", name="TIM HORTONS #1"),
+                plaid_tx("mine", "5.00", "FOOD_AND_DRINK_COFFEE", name="BLENZ #2"),
+                plaid_tx("plain", "6.00", "FOOD_AND_DRINK_COFFEE", name="JJ BEAN #3"),
+            ],
+            next_cursor="c1",
+            has_more=False,
+        )
+    ]
+    link(provider, store, repository)
+    # From before the edited column: a stuck "Other", and a choice made back then.
+    repository.update_bank_fields(
+        {
+            "stuck": {"category": "Other", "subcategory": ""},
+            "mine": {"category": "Transportation", "subcategory": ""},
+        }
+    )
+    store.save_cursor(USER, "item-1", "c1", NOW, data_version=12)
+
+    service.sync_all(provider, store, repository, USER, CATEGORIES, "CAD", NOW)
+
+    by_id = {t.transaction_id: t for t in repository.list_bank_transactions(BankTransactionFilter())}
+    assert (by_id["stuck"].category, by_id["stuck"].edited) == ("Dining Out", False)
+    assert (by_id["mine"].category, by_id["mine"].edited) == ("Transportation", True)
+    assert (by_id["plain"].category, by_id["plain"].edited) == ("Dining Out", False)

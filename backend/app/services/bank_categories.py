@@ -53,7 +53,7 @@ def set_category(
     else:
         category, subcategory = "", ""
 
-    fields = {"kind": kind, "category": category, "subcategory": subcategory}
+    fields = {"kind": kind, "category": category, "subcategory": subcategory, "edited": "TRUE"}
     key = merchant_key(target.merchant or target.description)
     changed = (
         [t for t in transactions if merchant_key(t.merchant or t.description) == key]

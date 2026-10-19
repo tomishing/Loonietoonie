@@ -264,3 +264,18 @@ def test_merchant_confidence_is_read_from_counterparties() -> None:
         ).merchant_confidence
         == ""
     )
+
+
+def test_remembered_category_is_found_by_bank_text_or_plaids_name() -> None:
+    rule = MerchantRule(merchant="skechers usa", kind="spending", category="Clothing", subcategory="")
+    by_plaid = {"skechers usa": rule}
+    by_text = {"skechers burnaby": rule}
+
+    assert (
+        bank.find_rule(
+            by_plaid, "Skechers Burnaby, BC", "Skechers Burnaby, BC", "SKECHERS #1 BURNABY", "Skechers USA"
+        )
+        is rule
+    )
+    assert bank.find_rule(by_text, "Sketchers Inc", "Sketchers Inc", "SKECHERS #1 BURNABY, BC") is rule
+    assert bank.find_rule(by_text, "Starbucks", "Starbucks", "STARBUCKS #9") is None

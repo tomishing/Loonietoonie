@@ -68,6 +68,10 @@ class Repository(Protocol):
         """Add or update accounts by account_id (a re-linked account is undeleted)."""
         ...
 
+    def list_deleted_bank_transactions(self) -> list[BankTransaction]:
+        """Soft-deleted bank transactions (removed by Plaid, by unlinking, or by a relink merge)."""
+        ...
+
     def list_removed_bank_accounts(self) -> list[BankAccount]:
         """Accounts of unlinked items (soft-deleted rows)."""
         ...

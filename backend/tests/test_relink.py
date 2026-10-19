@@ -12,7 +12,7 @@ from app.services import bank as service
 from app.services.bank_categories import set_category
 from app.services.spending_sources import spending_records
 from app.sheets.setup import ensure_spreadsheet
-from app.storage.models import NO_RECEIPT, BankTransactionFilter
+from app.storage.models import NO_RECEIPT, BankTransactionFilter, MerchantRule
 from app.storage.sheets_repository import SheetsRepository, TabReadCache
 from tests.fakes import FakeSheetsApi
 from tests.test_bank import CATEGORIES, USER, key
@@ -189,3 +189,148 @@ def test_sync_cleans_up_a_bank_linked_twice(store: SqliteTokenStore, repository:
 
     assert rows(repository) == {"new-a": ("acc-new", "Groceries", "", "2026-10-15")}
     assert [r.item_id for r in result.items] == ["item-1"]
+
+
+def test_choices_come_back_after_unlinking_with_removal_and_linking_again(
+    store: SqliteTokenStore, repository: SheetsRepository
+) -> None:
+    bank = Bank()
+    bank.add_link(
+        "0639",
+        [
+            tx("old-a", "acc-old", "21.40", 15, "RAMEN ARASHI VANCOUVER, BC"),
+            tx("old-b", "acc-old", "4.50", 12, "TIM HORTONS #123"),
+            tx("old-c", "acc-old", "9.00", 11, "SAFEWAY #4"),
+        ],
+        account_id="acc-old",
+    )
+    bank.add_link(
+        "0639",
+        [
+            tx("new-a", "acc-new", "21.40", 15, "RAMEN ARASHI VANCOUVER, BC"),
+            tx("new-b", "acc-new", "4.50", 12, "TIM HORTONS #123"),
+            tx("new-c", "acc-new", "9.00", 11, "SAFEWAY #4"),
+        ],
+        account_id="acc-new",
+    )
+    link(bank, store, repository, FIRST)
+    set_category(repository, "old-a", "spending", "Dining Out", "", apply_to_merchant=False)  # one-off
+    repository.set_bank_receipt_ids({"old-b": NO_RECEIPT})
+    # Unlink with "also remove its transactions", then link the bank again.
+    service.unlink_item(bank, store, repository, USER, "item-0", remove_transactions=True)  # type: ignore[arg-type]
+
+    link(bank, store, repository, SECOND)
+
+    assert rows(repository) == {
+        "new-a": ("acc-new", "Dining Out", "", "2026-10-15"),
+        "new-b": ("acc-new", "Groceries", NO_RECEIPT, "2026-10-12"),
+        "new-c": ("acc-new", "Groceries", "", "2026-10-11"),  # nothing changed, nothing carried
+    }
+
+
+def test_one_time_recovery_for_rows_imported_before(
+    store: SqliteTokenStore, repository: SheetsRepository
+) -> None:
+    bank = Bank()
+    bank.add_link(
+        "0639",
+        [
+            tx("old-a", "acc-old", "21.40", 15, "RAMEN ARASHI VANCOUVER, BC"),
+            tx("old-c", "acc-old", "9.00", 11, "SAFEWAY #4"),
+        ],
+        account_id="acc-old",
+    )
+    bank.add_link(
+        "0639",
+        [
+            tx("new-a", "acc-new", "21.40", 15, "RAMEN ARASHI VANCOUVER, BC"),
+            tx("new-c", "acc-new", "9.00", 11, "SAFEWAY #4"),
+        ],
+        account_id="acc-new",
+    )
+    link(bank, store, repository, FIRST)
+    set_category(repository, "old-a", "spending", "Dining Out", "", apply_to_merchant=False)
+    set_category(repository, "old-c", "spending", "Household", "", apply_to_merchant=False)
+    service.unlink_item(bank, store, repository, USER, "item-0", remove_transactions=True)  # type: ignore[arg-type]
+    # The bank was linked again before this fix: its rows came in with Plaid's categories.
+    access_token, item_id = bank.exchange_public_token("public")
+    store.add_item(USER, item_id, access_token, "ins_37", "CIBC", SECOND)
+    item = next(i for i in store.list_items(USER) if i.item_id == item_id)
+    service._sync_item(bank, store, repository, item, CATEGORIES, "CAD", SECOND)  # type: ignore[arg-type]
+    store.save_cursor(USER, item_id, "c1", SECOND, data_version=10)
+    set_category(
+        repository, "new-c", "spending", "Transportation", "", apply_to_merchant=False
+    )  # changed since
+
+    service.sync_all(bank, store, repository, USER, CATEGORIES, "CAD", SECOND)  # type: ignore[arg-type]
+
+    categories = {i: c for i, (_, c, _, _) in rows(repository).items()}
+    assert categories == {"new-a": "Dining Out", "new-c": "Transportation"}
+    assert store.list_items(USER)[0].data_version == service.DATA_VERSION
+
+
+def test_a_remembered_category_under_an_old_name_comes_back(
+    store: SqliteTokenStore, repository: SheetsRepository
+) -> None:
+    bank = Bank()
+    bank.add_link(
+        "0639", [tx("old-s", "acc-old", "89.99", 14, "SKECHERS #123 BURNABY, BC")], account_id="acc-old"
+    )
+    bank.add_link(
+        "0639", [tx("new-s", "acc-new", "89.99", 14, "SKECHERS #123 BURNABY, BC")], account_id="acc-new"
+    )
+    link(bank, store, repository, FIRST)
+    # Chosen for "all charges" while the charge showed Plaid's name, which the app no longer shows.
+    repository.save_merchant_rule(
+        MerchantRule(merchant="skechers usa", kind="spending", category="Hobbies", subcategory="")
+    )
+    repository.update_bank_fields({"old-s": {"merchant": "Skechers USA", "category": "Hobbies"}})
+    service.unlink_item(bank, store, repository, USER, "item-0", remove_transactions=True)  # type: ignore[arg-type]
+
+    link(bank, store, repository, SECOND)
+
+    assert rows(repository)["new-s"][1] == "Hobbies"
+
+
+def test_remembered_categories_are_found_by_the_bank_text_once_for_existing_rows(
+    store: SqliteTokenStore, repository: SheetsRepository
+) -> None:
+    bank = Bank()
+    bank.add_link("0639", [tx("s", "acc", "89.99", 14, "SKECHERS #123 BURNABY, BC")], account_id="acc")
+    link(bank, store, repository, FIRST)
+    # Saved under the bank text's key while the row shows another name.
+    repository.update_bank_fields({"s": {"merchant": "Sketchers Inc"}})
+    repository.save_merchant_rule(
+        MerchantRule(merchant="skechers burnaby", kind="spending", category="Hobbies", subcategory="")
+    )
+    store.save_cursor(USER, "item-0", "c1", FIRST, data_version=11)
+
+    service.sync_all(bank, store, repository, USER, CATEGORIES, "CAD", SECOND)  # type: ignore[arg-type]
+
+    assert rows(repository)["s"][1] == "Hobbies"
+
+
+def test_a_stale_other_is_not_a_choice_and_the_newest_link_wins(
+    store: SqliteTokenStore, repository: SheetsRepository
+) -> None:
+    bank = Bank()
+    for n in range(3):
+        bank.add_link(
+            "0639", [tx(f"kfc-{n}", f"acc-{n}", "12.49", 3, "KFC GUILDFORD")], account_id=f"acc-{n}"
+        )
+    bank.add_link("0639", [tx("tim-3", "acc-3", "4.50", 5, "TIM HORTONS #1")], account_id="acc-3")
+    link(bank, store, repository, FIRST)
+    # Imported while Plaid's category was vague; Plaid improved it later, the row kept "Other".
+    repository.update_bank_fields({"kfc-0": {"category": "Other"}})
+    service.unlink_item(bank, store, repository, USER, "item-0", remove_transactions=True)  # type: ignore[arg-type]
+    link(bank, store, repository, "2026-10-17T00:00:00Z")
+    assert rows(repository)["kfc-1"][1] == "Groceries"  # the stale "Other" didn't come along
+    set_category(repository, "kfc-1", "spending", "Dining Out", "", apply_to_merchant=False)
+    service.unlink_item(bank, store, repository, USER, "item-1", remove_transactions=True)  # type: ignore[arg-type]
+
+    link(bank, store, repository, SECOND)
+
+    [kfc] = [
+        t for t in repository.list_bank_transactions(BankTransactionFilter()) if t.transaction_id == "kfc-2"
+    ]
+    assert (kfc.category, kfc.edited) == ("Dining Out", True)  # the user's choice from the newest link

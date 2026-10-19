@@ -146,6 +146,8 @@ class BankTransaction(BaseModel):
     # The receipt that explains this charge (receipt matching): a receipt UUID, "" when not matched
     # yet, or NO_RECEIPT when the user said no receipt matches.
     receipt_id: str = ""
+    # The user chose kind/category/subcategory (not Plaid's mapping or a remembered category).
+    edited: bool = False
 
 
 class BankTransactionFilter(BaseModel):
@@ -168,3 +170,5 @@ class BankChanges(BaseModel):
     added: int = 0
     modified: int = 0
     removed: int = 0
+    # IDs of the rows just added (for the relink merge); not sent to the app.
+    added_ids: list[str] = Field(default_factory=list, exclude=True)
