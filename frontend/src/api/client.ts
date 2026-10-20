@@ -375,19 +375,22 @@ export type ChatEvent =
   | { type: 'reset'; text: string }
   | { type: 'error'; text: string }
   | { type: 'done'; text: string }
+  /** First event: the saved conversation's ID (a new one when none was sent). */
+  | { type: 'conversation'; text: string }
 
 /** Streams the assistant's answer. Events arrive as newline-delimited JSON. */
 export async function streamChat(
   messages: ChatTurn[],
   onEvent: (event: ChatEvent) => void,
   signal?: AbortSignal,
+  conversationId?: string | null,
 ): Promise<void> {
   const response = await fetch(
     `${API_BASE_URL}/api/chat`,
     await withAuth({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify(conversationId ? { messages, conversation_id: conversationId } : { messages }),
       signal,
     }),
   )
@@ -414,6 +417,28 @@ export async function streamChat(
     }
   }
   if (buffer.trim()) onEvent(JSON.parse(buffer) as ChatEvent)
+}
+
+/** A saved Ask conversation (chat_messages tab in the user's spreadsheet). */
+export interface ConversationSummary {
+  conversation_id: string
+  /** The first question. */
+  title: string
+  /** The last message's time (ISO 8601 UTC). */
+  updated_at: string
+  message_count: number
+}
+
+export function listConversations(): Promise<ConversationSummary[]> {
+  return apiGet<ConversationSummary[]>('/api/chat/conversations')
+}
+
+export function getConversation(conversationId: string): Promise<ChatTurn[]> {
+  return apiGet<ChatTurn[]>(`/api/chat/conversations/${encodeURIComponent(conversationId)}`)
+}
+
+export function deleteConversation(conversationId: string): Promise<void> {
+  return apiDelete(`/api/chat/conversations/${encodeURIComponent(conversationId)}`)
 }
 
 // --- export -------------------------------------------------------------------

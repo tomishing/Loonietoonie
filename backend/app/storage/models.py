@@ -166,6 +166,16 @@ class MerchantRule(BaseModel):
     subcategory: str
 
 
+class ChatRecord(BaseModel):
+    """One saved Ask message (chat_messages tab)."""
+
+    message_id: str
+    conversation_id: str
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: str  # ISO 8601 UTC
+
+
 class BankChanges(BaseModel):
     added: int = 0
     modified: int = 0

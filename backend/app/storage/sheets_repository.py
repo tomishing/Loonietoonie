@@ -20,6 +20,7 @@ from app.storage.models import (
     BankTransaction,
     BankTransactionFilter,
     Category,
+    ChatRecord,
     Item,
     ItemDraft,
     MerchantRule,
@@ -363,6 +364,56 @@ class SheetsRepository:
                 names[merchant] = name  # a later row for the same merchant wins
         return names
 
+    def list_chat_messages(self) -> list[ChatRecord]:
+        messages: list[ChatRecord] = []
+        for row in _active(self._read("chat_messages")):
+            role = row.values.get("role", "").strip()
+            if role not in ("user", "assistant") or not row.values.get("conversation_id", "").strip():
+                continue
+            messages.append(
+                ChatRecord(
+                    message_id=row.values.get("message_id", ""),
+                    conversation_id=row.values.get("conversation_id", "").strip(),
+                    role=role,  # type: ignore[arg-type]
+                    content=row.values.get("content", ""),
+                    created_at=row.values.get("created_at", ""),
+                )
+            )
+        return sorted(messages, key=lambda m: m.created_at)  # stable: same-time rows keep sheet order
+
+    def append_chat_messages(self, conversation_id: str, messages: list[tuple[str, str]]) -> None:
+        if not messages:
+            return
+        tab = self._read("chat_messages", fresh=True)
+        now = utc_now_iso()
+        self._append(
+            "chat_messages",
+            tab.headers,
+            [
+                {
+                    "message_id": str(uuid.uuid4()),
+                    "conversation_id": conversation_id,
+                    "role": role,
+                    "content": content[:CHAT_CELL_LIMIT],
+                    "created_at": now,
+                    "updated_at": now,
+                    "deleted": FALSE,
+                }
+                for role, content in messages
+            ],
+        )
+
+    def delete_conversation(self, conversation_id: str) -> int:
+        tab = self._read("chat_messages", fresh=True)
+        deleted = {"deleted": TRUE, "updated_at": utc_now_iso()}
+        writes = [
+            ("chat_messages", _with_values(row, tab.headers, deleted))
+            for row in _active(tab)
+            if row.values.get("conversation_id", "").strip() == conversation_id
+        ]
+        self._write_rows(writes)
+        return len(writes)
+
     def get_settings(self) -> dict[str, str]:
         settings: dict[str, str] = {}
         for row in self._read("settings").rows:
@@ -642,6 +693,8 @@ def _build_receipt(record: Record, item_records: list[Record]) -> Receipt:
 # --- bank rows ----------------------------------------------------------------
 
 # Columns the user may edit in the sheet (or the app sets itself); a bank update keeps them.
+# Google Sheets holds at most 50,000 characters per cell.
+CHAT_CELL_LIMIT = 45_000
 USER_FIELDS = frozenset({"kind", "category", "subcategory", "receipt_id", "edited", "deleted"})
 KINDS = ("spending", "income", "transfer")
 

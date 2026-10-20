@@ -153,6 +153,7 @@ The migration also runs the first time each server process uses a spreadsheet (`
 | `bank_transactions` | transaction_id, account_id, date, merchant, description, amount, currency, kind, category, subcategory, plaid_category, pending, receipt_id, edited, updated_at, deleted |
 | `merchant_categories` | merchant (merchant key), kind, category, subcategory, updated_at, deleted |
 | `merchant_names` | merchant (bank key: the merchant key of the charge's own cleaned bank text), name, updated_at, deleted |
+| `chat_messages` | message_id, conversation_id, role (user/assistant), content (≤ 45,000 characters), created_at, updated_at, deleted |
 | `settings` | key, value, updated_at (keys: `household_type`, `province`, for Compared with similar households) |
 | `ocr_labels` | receipt_id, field, model_value, corrected_value (opt-in) |
 
@@ -279,8 +280,11 @@ Tests: `tests/samples/` holds OCR texts in English (Ontario, HST), French (Québ
 | GET | `/api/household` | The household type and province (`""` when not set) with the choices (`household_types`, `provinces`: `{value, label}`) |
 | PUT | `/api/household` | `{household_type, province}` → saved in the `settings` tab; 422 for values not in the choices |
 | DELETE | `/api/household` | Clears the household type and province (Account → Your household → **Clear**, after a confirmation); Patterns stops comparing until they're set again |
+| GET | `/api/chat/conversations` | Saved Ask conversations, newest first: `conversation_id`, `title` (first question, ≤ 80 characters), `updated_at`, `message_count` |
+| GET | `/api/chat/conversations/{id}` | A saved conversation's messages `{role, content, created_at}` in order; 404 if none |
+| DELETE | `/api/chat/conversations/{id}` | Soft-deletes a conversation's messages; 404 if none |
 | GET | `/api/household/comparison` | Compared with similar households (§7 Dashboard): `status` (`ok`, `not_set`, `no_history`), household, region, `start` and `end` (January 1 or the first purchase this year, to today), survey and price years, rows `{category, yours, typical, difference}` |
-| POST | `/api/chat` | Spending chatbot. Body: `{messages: [{role, content}]}` (text only, last one from the user, ≤ 40 messages, ≤ 4000 chars each). Streams newline-delimited JSON events (`text`, `status`, `reset`, `error`, `done`) (§7 Chat) |
+| POST | `/api/chat` | Spending chatbot. Body: `{messages: [{role, content}], conversation_id?}` (text only, last one from the user, ≤ 40 messages, ≤ 4000 chars each). Streams newline-delimited JSON events (`conversation` first, then `text`, `status`, `reset`, `error`, `done`); a completed answer is saved with its question in `chat_messages` (§7 Chat) |
 | GET | `/api/bank/items` | `{enabled, items}`: linked banks/cards with their accounts and last sync (`enabled: false` when Plaid isn't configured) |
 | POST | `/api/bank/link-token` | `{link_token}` to open Plaid Link (503 if not configured) |
 | POST | `/api/bank/items` | `{public_token}` from Plaid Link → store the encrypted token, save accounts, first import; 201 with the sync result |
@@ -396,7 +400,7 @@ Purpose: answer questions about actual spending ("What did I spend most on this 
   - short answers, using `- ` bullets and `**bold**` only (the frontend renders just these)
   - no savings lectures
 - **Loop:** streamed, at most 6 tool rounds per answer. Each tool round appends to the history unchanged (thinking blocks stay valid). The answer is checked for refusals and cut-off tool input before any tool runs, and unparseable tool JSON is retried at most twice.
-- **No server-side chat storage.** The conversation lives in the browser tab (`sessionStorage`) and is sent as plain text with each request. Earlier answers are replayed without thinking blocks, which is allowed.
+- **Saved conversations, no server storage.** Completed answers are saved with their question in the user's spreadsheet (`chat_messages` tab, one row per message, soft-deleted). `POST /api/chat` takes an optional `conversation_id` and streams a `conversation` event first with the ID (a new UUID when none was sent); a failed or restarted answer isn't saved. Ask opens the latest conversation; **History** lists conversations (first question as the title, last message time) to reopen or delete, and **New chat** starts a fresh one. Only the open conversation is sent, as plain text, and only its latest 40 messages (starting with a question). Earlier answers are replayed without thinking blocks, which is allowed.
 - **Privacy:** questions and the spending data the tools return are sent to Claude (Anthropic). The Ask page says so.
 - **Tests:** a fake streaming client covers the loop; `RUN_LIVE_CLAUDE=1 pytest tests/live` asks the real model questions in English and Japanese about known receipts (a few cents per run).
 

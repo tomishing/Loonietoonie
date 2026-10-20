@@ -1,14 +1,23 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { errorMessages, streamChat, type ChatTurn } from '../api/client'
+import {
+  deleteConversation,
+  errorMessages,
+  getConversation,
+  listConversations,
+  streamChat,
+  type ChatTurn,
+  type ConversationSummary,
+} from '../api/client'
 import { Icon } from '../components/Icon'
 import { ChatText } from '../components/ChatText'
+import { formatDateTime } from '../lib/format'
 
-const STORAGE_KEY = 'loonietoonie.chat'
+// The server accepts this many messages per question; longer chats send their latest part.
+const MAX_SENT = 40
 const SUGGESTIONS = [
   'What did I spend the most on this month?',
   'How does this month compare with my usual month?',
   'Where do I buy groceries most often?',
-  '今月の外食はいくら？',
 ]
 
 interface Turn extends ChatTurn {
@@ -16,18 +25,21 @@ interface Turn extends ChatTurn {
   error?: boolean
 }
 
-/** The conversation lives only in this browser tab (sessionStorage); the server keeps nothing. */
-function loadTurns(): Turn[] {
-  try {
-    const saved = sessionStorage.getItem(STORAGE_KEY)
-    return saved ? (JSON.parse(saved) as Turn[]) : []
-  } catch {
-    return []
-  }
+/** The latest messages of a conversation, starting with a question (the assistant needs that). */
+function recent(turns: ChatTurn[]): ChatTurn[] {
+  const tail = turns.slice(-MAX_SENT)
+  const firstQuestion = tail.findIndex((t) => t.role === 'user')
+  return firstQuestion > 0 ? tail.slice(firstQuestion) : tail
 }
 
 export function ChatPage() {
-  const [turns, setTurns] = useState<Turn[]>(loadTurns)
+  const [turns, setTurns] = useState<Turn[]>([])
+  // Conversations are saved in the user's spreadsheet; Ask opens the latest one.
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [conversations, setConversations] = useState<ConversationSummary[] | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
@@ -35,13 +47,48 @@ export function ChatPage() {
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(turns))
-    } catch {
-      // storage unavailable (private mode): the chat still works for this visit
-    }
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [turns, status])
+
+  const refreshList = () =>
+    listConversations()
+      .then(setConversations)
+      .catch(() => undefined) // the list is a convenience; the chat works without it
+
+  const open = async (id: string) => {
+    abortRef.current?.abort()
+    setShowHistory(false)
+    setLoading(true)
+    setLoadError(null)
+    try {
+      setTurns(await getConversation(id))
+      setConversationId(id)
+    } catch (error) {
+      setLoadError(errorMessages(error).join(' '))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    let active = true
+    listConversations()
+      .then(async (list) => {
+        if (!active) return
+        setConversations(list)
+        if (list.length > 0) {
+          const latest = await getConversation(list[0].conversation_id)
+          if (!active) return
+          setTurns(latest)
+          setConversationId(list[0].conversation_id)
+        }
+      })
+      .catch((error: unknown) => active && setLoadError(errorMessages(error).join(' ')))
+      .finally(() => active && setLoading(false))
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
@@ -53,7 +100,7 @@ export function ChatPage() {
     if (!text || streaming) return
     // Failed answers are shown to the user but not sent back to the assistant.
     const earlier: ChatTurn[] = turns.filter((t) => !t.error && t.content).map(({ role, content }) => ({ role, content }))
-    const history: ChatTurn[] = [...earlier, { role: 'user', content: text }]
+    const history: ChatTurn[] = recent([...earlier, { role: 'user', content: text }])
     setTurns((current) => [...current, { role: 'user', content: text }, { role: 'assistant', content: '' }])
     setInput('')
     setStreaming(true)
@@ -65,7 +112,9 @@ export function ChatPage() {
       await streamChat(
         history,
         (event) => {
-          if (event.type === 'text') {
+          if (event.type === 'conversation') {
+            setConversationId(event.text)
+          } else if (event.type === 'text') {
             setStatus(null)
             updateLast((turn) => ({ ...turn, content: turn.content + event.text }))
           } else if (event.type === 'status') {
@@ -77,7 +126,9 @@ export function ChatPage() {
           }
         },
         controller.signal,
+        conversationId,
       )
+      void refreshList()
     } catch (error) {
       if (!controller.signal.aborted) {
         updateLast((turn) => ({ ...turn, content: errorMessages(error).join(' '), error: true }))
@@ -103,22 +154,78 @@ export function ChatPage() {
 
   const newChat = () => {
     abortRef.current?.abort()
+    setShowHistory(false)
+    setLoadError(null)
     setTurns([])
+    setConversationId(null)
+  }
+
+  const remove = async (conversation: ConversationSummary) => {
+    if (!window.confirm(`Delete "${conversation.title}"?`)) return
+    try {
+      await deleteConversation(conversation.conversation_id)
+      setConversations((list) => list?.filter((c) => c.conversation_id !== conversation.conversation_id) ?? null)
+      if (conversation.conversation_id === conversationId) newChat()
+    } catch (error) {
+      setLoadError(errorMessages(error).join(' '))
+    }
   }
 
   return (
     <section className="page chat">
       <div className="page-title">
         <h1>Ask about your spending</h1>
-        {turns.length > 0 && (
-          <button type="button" className="button button-secondary button-small" onClick={newChat}>
-            New chat
-          </button>
-        )}
+        <div className="chat-actions">
+          {conversations !== null && conversations.length > 0 && (
+            <button
+              type="button"
+              className={`button button-ghost button-small${showHistory ? ' button-on' : ''}`}
+              onClick={() => setShowHistory((shown) => !shown)}
+              aria-expanded={showHistory}
+            >
+              <Icon name="clock" size={18} />
+              History
+            </button>
+          )}
+          {turns.length > 0 && (
+            <button type="button" className="button button-secondary button-small" onClick={newChat}>
+              <Icon name="plus" size={18} />
+              New chat
+            </button>
+          )}
+        </div>
       </div>
 
+      {showHistory && conversations !== null && (
+        <ul className="card chat-history" aria-label="Saved conversations">
+          {conversations.map((conversation) => (
+            <li key={conversation.conversation_id} className={conversation.conversation_id === conversationId ? 'chat-history-current' : ''}>
+              <button type="button" className="chat-history-open" onClick={() => void open(conversation.conversation_id)}>
+                <span className="chat-history-title">{conversation.title || 'Conversation'}</span>
+                <span className="muted">{formatDateTime(conversation.updated_at)}</span>
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => void remove(conversation)}
+                aria-label={`Delete "${conversation.title}"`}
+              >
+                <Icon name="trash" size={18} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {loadError && (
+        <p className="notice notice-error" role="alert">
+          {loadError}
+        </p>
+      )}
+
       <div className="chat-log" aria-live="polite">
-        {turns.length === 0 && (
+        {loading && <p className="muted typing">Loading your conversations…</p>}
+        {!loading && turns.length === 0 && (
           <div className="chat-welcome">
             <img src="/favicon.svg" alt="" width={56} height={56} />
             <p>Hi! Ask me anything about your spending. I look up the numbers from your receipts and bank and card transactions.</p>
@@ -176,7 +283,8 @@ export function ChatPage() {
         </button>
       </form>
       <p className="muted field-note">
-        Answers come from your receipts and bank and card transactions. Your questions and spending data are sent to Claude (Anthropic) to answer them.
+        Answers come from your receipts and bank and card transactions. Your questions and spending data are sent to Claude
+        (Anthropic) to answer them. Conversations are saved in your spreadsheet.
       </p>
     </section>
   )

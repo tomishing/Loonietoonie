@@ -2574,3 +2574,72 @@ button.category-bar {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.chat-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.button-on {
+  background: var(--hover-wash);
+}
+
+.chat-history {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 16px;
+  padding: 6px;
+  list-style: none;
+}
+
+.chat-history li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 12px;
+}
+
+.chat-history-current {
+  background: var(--surface-2);
+}
+
+.chat-history-open {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 12px;
+  background: none;
+  color: var(--text-h);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-history-open:hover,
+.chat-history-open:focus-visible {
+  background: var(--hover-wash);
+  outline: none;
+}
+
+.chat-history-title {
+  overflow: hidden;
+  max-width: 100%;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-history .muted {
+  font-size: 0.85rem;
+}
+
+.chat .page-title {
+  flex-wrap: wrap;
+}

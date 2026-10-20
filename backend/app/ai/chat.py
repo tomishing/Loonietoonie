@@ -178,7 +178,7 @@ class ChatMessage(BaseModel):
 
 @dataclass(frozen=True)
 class ChatEvent:
-    type: Literal["text", "status", "reset", "error", "done"]
+    type: Literal["text", "status", "reset", "error", "done", "conversation"]
     text: str = ""
 
     def to_json(self) -> str:

@@ -85,6 +85,16 @@ TABS: dict[str, tuple[str, ...]] = {
     # Merchant names learned from matched receipts (merchant = services/names.bank_key).
     "merchant_names": ("merchant", "name", "updated_at", "deleted"),
     "settings": ("key", "value", "updated_at"),
+    # Ask conversations: one row per question or answer; a conversation is its rows in time order.
+    "chat_messages": (
+        "message_id",
+        "conversation_id",
+        "role",
+        "content",
+        "created_at",
+        "updated_at",
+        "deleted",
+    ),
     "ocr_labels": ("receipt_id", "field", "model_value", "corrected_value"),
 }
 

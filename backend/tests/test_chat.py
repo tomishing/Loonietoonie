@@ -24,8 +24,11 @@ from app.api.chat import get_chat_runner
 from app.config import get_settings
 from app.main import app
 from app.services.spending_queries import SpendingQueries
+from app.sheets.setup import ensure_spreadsheet
 from app.storage.dependencies import get_repository
 from app.storage.models import Category, Receipt, ReceiptFilter
+from app.storage.sheets_repository import SheetsRepository, TabReadCache
+from tests.fakes import FakeSheetsApi
 from tests.test_auth import make_settings
 from tests.test_summary import receipt
 
@@ -301,6 +304,12 @@ class FakeRepository:
     def list_categories(self) -> list[Category]:
         return [Category(name="Groceries", icon="🛒")]
 
+    def __init__(self) -> None:
+        self.saved: list[tuple[str, list[tuple[str, str]]]] = []
+
+    def append_chat_messages(self, conversation_id: str, messages: list[tuple[str, str]]) -> None:
+        self.saved.append((conversation_id, messages))
+
 
 @pytest.fixture
 def runner() -> FakeRunner:
@@ -323,7 +332,8 @@ def test_chat_endpoint_streams_ndjson(client: TestClient, runner: FakeRunner) ->
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/x-ndjson")
     events = [json.loads(line) for line in response.text.splitlines()]
-    assert events == [
+    assert events[0]["type"] == "conversation" and len(events[0]["text"]) == 36  # a new conversation's UUID
+    assert events[1:] == [
         {"type": "status", "text": "Adding up your spending…"},
         {"type": "text", "text": "You spent "},
         {"type": "text", "text": "CAD"},
@@ -365,3 +375,96 @@ def test_chat_requires_sign_in() -> None:
             == 401
         )
     app.dependency_overrides.clear()
+
+
+# --- saved conversations ----------------------------------------------------------
+
+
+class FailingRunner:
+    def run(
+        self, history: list[ChatMessage], queries: SpendingQueries, categories: list[str]
+    ) -> Iterator[ChatEvent]:
+        yield ChatEvent("text", "Half an answer")
+        yield ChatEvent("error", "The assistant is busy right now.")
+
+
+@pytest.fixture
+def saved() -> Iterator[tuple[TestClient, SheetsRepository, list[object]]]:
+    api = FakeSheetsApi()
+    repository = SheetsRepository(
+        api, ensure_spreadsheet(api, "2026-10-20T00:00:00Z"), TabReadCache(ttl_seconds=0)
+    )
+    runners: list[object] = [FakeRunner()]
+    app.dependency_overrides[get_settings] = lambda: make_settings()
+    app.dependency_overrides[get_repository] = lambda: repository
+    app.dependency_overrides[get_chat_runner] = lambda: runners[0]
+    with TestClient(app) as http:
+        yield http, repository, runners
+    app.dependency_overrides.clear()
+
+
+def ask(
+    http: TestClient,
+    question: str,
+    conversation_id: str | None = None,
+    earlier: list[dict[str, str]] | None = None,
+) -> str:
+    body: dict[str, Any] = {"messages": [*(earlier or []), {"role": "user", "content": question}]}
+    if conversation_id:
+        body["conversation_id"] = conversation_id
+    events = [json.loads(line) for line in http.post("/api/chat", json=body).text.splitlines()]
+    return str(events[0]["text"])
+
+
+def test_answers_are_saved_and_listed(saved: tuple[TestClient, SheetsRepository, list[object]]) -> None:
+    http, repository, runners = saved
+
+    first = ask(http, "  How much on   groceries?  ")
+    again = ask(
+        http,
+        "And last month?",
+        first,
+        [
+            {"role": "user", "content": "How much on groceries?"},
+            {"role": "assistant", "content": "You spent CAD"},
+        ],
+    )
+    other = ask(http, "Dining out?")
+    runners[0] = FailingRunner()
+    failed = ask(http, "This one fails")
+
+    assert again == first
+    listed = http.get("/api/chat/conversations").json()
+    assert [(c["title"], c["message_count"]) for c in listed] == [
+        ("Dining out?", 2),
+        ("How much on groceries?", 4),
+    ]
+    assert {c["conversation_id"] for c in listed} == {first, other}  # the failed answer wasn't saved
+    assert failed not in {c["conversation_id"] for c in listed}
+    messages = http.get(f"/api/chat/conversations/{first}").json()
+    assert [(m["role"], m["content"]) for m in messages] == [
+        ("user", "  How much on   groceries?  "),
+        ("assistant", "You spent CAD"),
+        ("user", "And last month?"),
+        ("assistant", "You spent CAD"),
+    ]
+
+    assert http.delete(f"/api/chat/conversations/{first}").status_code == 204
+    assert [c["conversation_id"] for c in http.get("/api/chat/conversations").json()] == [other]
+    assert http.get(f"/api/chat/conversations/{first}").status_code == 404
+    assert http.delete(f"/api/chat/conversations/{first}").status_code == 404
+    rows = api_rows(repository)
+    assert sum(1 for row in rows if row["deleted"] == "TRUE") == 4  # soft-deleted, not removed
+
+
+def api_rows(repository: SheetsRepository) -> list[dict[str, str]]:
+    tab = repository._read("chat_messages", fresh=True)  # type: ignore[attr-defined]
+    return [row.values for row in tab.rows]
+
+
+def test_long_titles_are_shortened(saved: tuple[TestClient, SheetsRepository, list[object]]) -> None:
+    http, _, _ = saved
+    ask(http, "word " * 40)
+
+    [conversation] = http.get("/api/chat/conversations").json()
+    assert len(conversation["title"]) == 80 and conversation["title"].endswith("…")

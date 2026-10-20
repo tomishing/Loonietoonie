@@ -6,6 +6,7 @@ from app.storage.models import (
     BankTransaction,
     BankTransactionFilter,
     Category,
+    ChatRecord,
     MerchantRule,
     Receipt,
     ReceiptDraft,
@@ -126,4 +127,16 @@ class Repository(Protocol):
 
     def save_settings(self, settings: dict[str, str]) -> None:
         """Add or replace settings {key: value}, in one write per kind of change."""
+        ...
+
+    def list_chat_messages(self) -> list[ChatRecord]:
+        """Saved Ask messages that aren't deleted, oldest first."""
+        ...
+
+    def append_chat_messages(self, conversation_id: str, messages: list[tuple[str, str]]) -> None:
+        """Save (role, content) messages to a conversation, in one write. IDs and times are set here."""
+        ...
+
+    def delete_conversation(self, conversation_id: str) -> int:
+        """Soft-delete a conversation's messages. Returns how many were deleted."""
         ...
