@@ -153,7 +153,7 @@ The migration also runs the first time each server process uses a spreadsheet (`
 | `bank_transactions` | transaction_id, account_id, date, merchant, description, amount, currency, kind, category, subcategory, plaid_category, pending, receipt_id, edited, updated_at, deleted |
 | `merchant_categories` | merchant (merchant key), kind, category, subcategory, updated_at, deleted |
 | `merchant_names` | merchant (bank key: the merchant key of the charge's own cleaned bank text), name, updated_at, deleted |
-| `settings` | key, value, updated_at |
+| `settings` | key, value, updated_at (keys: `household_type`, `province`, for Compared with similar households) |
 | `ocr_labels` | receipt_id, field, model_value, corrected_value (opt-in) |
 
 Rules:
@@ -276,6 +276,9 @@ Tests: `tests/samples/` holds OCR texts in English (Ontario, HST), French (Québ
 | PUT | `/api/receipts/{id}` | Replace a receipt's fields and items (§5) |
 | DELETE | `/api/receipts/{id}` | Soft-delete the receipt and its items; 204 |
 | GET | `/api/summary?month=YYYY-MM&currency=CAD` | Spending patterns for one month and one currency (§7 Dashboard). Defaults: this month, `DEFAULT_CURRENCY` |
+| GET | `/api/household` | The household type and province (`""` when not set) with the choices (`household_types`, `provinces`: `{value, label}`) |
+| PUT | `/api/household` | `{household_type, province}` → saved in the `settings` tab; 422 for values not in the choices |
+| GET | `/api/household/comparison` | Compared with similar households (§7 Dashboard): `status` (`ok`, `not_set`, `no_history`), household, region, months, survey and price years, rows `{category, yours, typical, difference}` |
 | POST | `/api/chat` | Spending chatbot. Body: `{messages: [{role, content}]}` (text only, last one from the user, ≤ 40 messages, ≤ 4000 chars each). Streams newline-delimited JSON events (`text`, `status`, `reset`, `error`, `done`) (§7 Chat) |
 | GET | `/api/bank/items` | `{enabled, items}`: linked banks/cards with their accounts and last sync (`enabled: false` when Plaid isn't configured) |
 | POST | `/api/bank/link-token` | `{link_token}` to open Plaid Link (503 if not configured) |
@@ -418,6 +421,12 @@ Purpose: see actual spending patterns. Computed on the backend with pandas (`app
   4. *Last 12 months*:
      - stacked columns of the top 5 categories (by 12-month spending), with smaller categories folded into a gray "Other categories" (`(other categories)` in the API, never equal to a real category name)
      - a legend, a tooltip listing every series, and a "Show table" view with all the numbers
+  5. *Compared with similar households* (CAD only; `app/services/household.py`):
+     - the user's average month per category next to Statistics Canada's average for households like theirs. The household type (living alone, couple, couple with children, single parent, couple living with others, other) and province come from **Your household** on the Account page; until they're set, the card invites the user to fill them in
+     - the averages are from the Survey of Household Spending (table 11-10-0222-01 by province, 11-10-0224-01 by household type, Canada only), built into `app/reference/household_spending.json` by `backend/scripts/build_household_spending.py`. A GitHub Actions workflow (`.github/workflows/household-spending.yml`) re-runs the script on the 1st of each month and opens an issue when Statistics Canada has published new data (a new survey or a new CPI year); updating the file stays a manual, reviewed change. A household type in a province is estimated as the Canadian average for the type times the province's ratio to Canada, and brought to the latest year's prices with the province's all-items CPI (table 18-10-0005-01). Territories use the Canada average
+     - compared categories are those the app sees well, each mapped to survey lines: Groceries (food from stores), Dining Out (restaurants), Transportation (vehicle operation, leasing, local transit and taxis; not vehicle purchases), Utilities (water, fuel, electricity, communications), Household (furnishings, equipment, cleaning and paper supplies, computers, home entertainment equipment), Clothing, Entertainment & Hobbies together (recreation and reading, without package trips, recreational vehicle purchases, and electronics), Personal Care, Health (without insurance premiums), Pets, Education. Housing, Travel, Kids, Tax & Fees, and Other aren't compared
+     - the user's side is the average of the last 3 full months (only months since the first purchase in CAD; the month in progress doesn't count). Categories without spending in those months are left out (e.g. no pets)
+     - each row: a bar for the user, a tick for similar households, and "N% more", "N% less", or "about the same" (within 5%). The card says the household, the province, the months, the survey and price years, and that cash and unlinked cards make the user's amounts look lower; there is no overall "saved" figure
   5. *Top stores* (spent, visits) and *Bought most often* (times, spent; Tax & Fees excluded) for the month, as tables.
 - **Not itemized:** when a receipt's total differs from its items (e.g. tax typed only into the total), the difference is shown as "Not itemized" (`(not itemized)`), so category totals always add up to the month's total.
 - **Charts:**

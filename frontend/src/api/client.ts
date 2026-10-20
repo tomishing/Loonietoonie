@@ -586,3 +586,52 @@ export async function setBankCategory(
   )
   return result.changed
 }
+
+// --- household comparison (Statistics Canada averages) ----------------------------------------
+
+export interface HouseholdOption {
+  value: string
+  label: string
+}
+
+export interface HouseholdSettings {
+  /** A household_types value, or "" when not set. */
+  household_type: string
+  /** A provinces value, or "" when not set. */
+  province: string
+  household_types: HouseholdOption[]
+  provinces: HouseholdOption[]
+}
+
+export interface ComparisonRow {
+  category: string
+  /** The user's monthly average (decimal string). */
+  yours: string
+  /** Similar households' monthly average at current prices (decimal string). */
+  typical: string
+  /** yours / typical - 1, e.g. "0.20" = 20% more. */
+  difference: string
+}
+
+export interface HouseholdComparison {
+  status: 'ok' | 'not_set' | 'no_history'
+  household: string
+  region: string
+  months: string[]
+  survey_year: number
+  price_year: number
+  rows: ComparisonRow[]
+  source: string
+}
+
+export function getHousehold(): Promise<HouseholdSettings> {
+  return apiGet<HouseholdSettings>('/api/household')
+}
+
+export function saveHousehold(household_type: string, province: string): Promise<HouseholdSettings> {
+  return apiPut<HouseholdSettings>('/api/household', { household_type, province })
+}
+
+export function getHouseholdComparison(): Promise<HouseholdComparison> {
+  return apiGet<HouseholdComparison>('/api/household/comparison')
+}

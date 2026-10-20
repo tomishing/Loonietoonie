@@ -1,0 +1,387 @@
+{
+  "source": "Statistics Canada, Survey of Household Spending (tables 11-10-0222-01 and 11-10-0224-01) and Consumer Price Index (table 18-10-0005-01). Statistics Canada Open Licence.",
+  "survey_year": 2023,
+  "price_year": 2025,
+  "categories": [
+    {
+      "key": "groceries",
+      "label": "Groceries",
+      "app_categories": [
+        "Groceries"
+      ]
+    },
+    {
+      "key": "dining_out",
+      "label": "Dining Out",
+      "app_categories": [
+        "Dining Out"
+      ]
+    },
+    {
+      "key": "transportation",
+      "label": "Transportation",
+      "app_categories": [
+        "Transportation"
+      ]
+    },
+    {
+      "key": "utilities",
+      "label": "Utilities",
+      "app_categories": [
+        "Utilities"
+      ]
+    },
+    {
+      "key": "household",
+      "label": "Household",
+      "app_categories": [
+        "Household"
+      ]
+    },
+    {
+      "key": "clothing",
+      "label": "Clothing",
+      "app_categories": [
+        "Clothing"
+      ]
+    },
+    {
+      "key": "entertainment",
+      "label": "Entertainment & Hobbies",
+      "app_categories": [
+        "Entertainment",
+        "Hobbies"
+      ]
+    },
+    {
+      "key": "personal_care",
+      "label": "Personal Care",
+      "app_categories": [
+        "Personal Care"
+      ]
+    },
+    {
+      "key": "health",
+      "label": "Health",
+      "app_categories": [
+        "Health"
+      ]
+    },
+    {
+      "key": "pets",
+      "label": "Pets",
+      "app_categories": [
+        "Pets"
+      ]
+    },
+    {
+      "key": "education",
+      "label": "Education",
+      "app_categories": [
+        "Education"
+      ]
+    }
+  ],
+  "provinces": {
+    "NL": {
+      "name": "Newfoundland and Labrador",
+      "price_factor": "1.0327",
+      "annual": {
+        "groceries": "10809",
+        "dining_out": "2455",
+        "transportation": "6855",
+        "utilities": "6822",
+        "household": "4787",
+        "clothing": "2157",
+        "entertainment": "2412",
+        "personal_care": "1734",
+        "health": "1823",
+        "pets": "866",
+        "education": "770"
+      }
+    },
+    "PE": {
+      "name": "Prince Edward Island",
+      "price_factor": "1.0327",
+      "annual": {
+        "groceries": "8349",
+        "dining_out": "3637",
+        "transportation": "7091",
+        "utilities": "7121",
+        "household": "4565",
+        "clothing": "2001",
+        "entertainment": "2485",
+        "personal_care": "1570",
+        "health": "1697",
+        "pets": "882",
+        "education": "985"
+      }
+    },
+    "NS": {
+      "name": "Nova Scotia",
+      "price_factor": "1.0442",
+      "annual": {
+        "groceries": "7831",
+        "dining_out": "2812",
+        "transportation": "6608",
+        "utilities": "6712",
+        "household": "4406",
+        "clothing": "2100",
+        "entertainment": "2538",
+        "personal_care": "1701",
+        "health": "1824",
+        "pets": "983",
+        "education": "1237"
+      }
+    },
+    "NB": {
+      "name": "New Brunswick",
+      "price_factor": "1.0394",
+      "annual": {
+        "groceries": "8488",
+        "dining_out": "2700",
+        "transportation": "7151",
+        "utilities": "6632",
+        "household": "4944",
+        "clothing": "2133",
+        "entertainment": "2557",
+        "personal_care": "1530",
+        "health": "1916",
+        "pets": "852",
+        "education": "967"
+      }
+    },
+    "QC": {
+      "name": "Quebec",
+      "price_factor": "1.0482",
+      "annual": {
+        "groceries": "8634",
+        "dining_out": "2464",
+        "transportation": "5416",
+        "utilities": "4800",
+        "household": "4646",
+        "clothing": "2468",
+        "entertainment": "2387",
+        "personal_care": "1726",
+        "health": "1968",
+        "pets": "537",
+        "education": "993"
+      }
+    },
+    "ON": {
+      "name": "Ontario",
+      "price_factor": "1.0435",
+      "annual": {
+        "groceries": "7974",
+        "dining_out": "3686",
+        "transportation": "6486",
+        "utilities": "6787",
+        "household": "4982",
+        "clothing": "3086",
+        "entertainment": "2989",
+        "personal_care": "1714",
+        "health": "2488",
+        "pets": "852",
+        "education": "2021"
+      }
+    },
+    "MB": {
+      "name": "Manitoba",
+      "price_factor": "1.0378",
+      "annual": {
+        "groceries": "9570",
+        "dining_out": "3083",
+        "transportation": "7201",
+        "utilities": "5993",
+        "household": "4919",
+        "clothing": "2319",
+        "entertainment": "2448",
+        "personal_care": "1831",
+        "health": "2492",
+        "pets": "705",
+        "education": "1237"
+      }
+    },
+    "SK": {
+      "name": "Saskatchewan",
+      "price_factor": "1.0356",
+      "annual": {
+        "groceries": "9528",
+        "dining_out": "3128",
+        "transportation": "7097",
+        "utilities": "6806",
+        "household": "4907",
+        "clothing": "2066",
+        "entertainment": "2334",
+        "personal_care": "1819",
+        "health": "2415",
+        "pets": "694",
+        "education": "1157"
+      }
+    },
+    "AB": {
+      "name": "Alberta",
+      "price_factor": "1.0494",
+      "annual": {
+        "groceries": "9936",
+        "dining_out": "4015",
+        "transportation": "8108",
+        "utilities": "8301",
+        "household": "5476",
+        "clothing": "2874",
+        "entertainment": "3001",
+        "personal_care": "2490",
+        "health": "2445",
+        "pets": "856",
+        "education": "1954"
+      }
+    },
+    "BC": {
+      "name": "British Columbia",
+      "price_factor": "1.0483",
+      "annual": {
+        "groceries": "8530",
+        "dining_out": "3630",
+        "transportation": "6520",
+        "utilities": "5991",
+        "household": "5022",
+        "clothing": "2558",
+        "entertainment": "3888",
+        "personal_care": "1966",
+        "health": "2512",
+        "pets": "747",
+        "education": "2130"
+      }
+    },
+    "CA": {
+      "name": "Canada",
+      "price_factor": "1.0452",
+      "annual": {
+        "groceries": "8579",
+        "dining_out": "3316",
+        "transportation": "6478",
+        "utilities": "6332",
+        "household": "4934",
+        "clothing": "2716",
+        "entertainment": "2730",
+        "personal_care": "1840",
+        "health": "2312",
+        "pets": "756",
+        "education": "1658"
+      }
+    }
+  },
+  "household_types": {
+    "one_person": {
+      "survey": "One person households",
+      "annual": {
+        "groceries": "4595",
+        "dining_out": "1866",
+        "transportation": "3700",
+        "utilities": "3988",
+        "household": "2674",
+        "clothing": "1351",
+        "entertainment": "1545",
+        "personal_care": "1036",
+        "health": "1543",
+        "pets": "484",
+        "education": "393"
+      }
+    },
+    "couple": {
+      "survey": "Couples without children",
+      "annual": {
+        "groceries": "8178",
+        "dining_out": "3402",
+        "transportation": "6309",
+        "utilities": "6353",
+        "household": "5135",
+        "clothing": "2452",
+        "entertainment": "2970",
+        "personal_care": "1859",
+        "health": "2629",
+        "pets": "827",
+        "education": "595"
+      }
+    },
+    "couple_children": {
+      "survey": "Couples with children",
+      "annual": {
+        "groceries": "12954",
+        "dining_out": "4517",
+        "transportation": "9538",
+        "utilities": "8399",
+        "household": "6956",
+        "clothing": "4239",
+        "entertainment": "4096",
+        "personal_care": "2659",
+        "health": "2696",
+        "pets": "912",
+        "education": "3700"
+      }
+    },
+    "lone_parent": {
+      "survey": "Lone-parent households with no additional persons",
+      "annual": {
+        "groceries": "8099",
+        "dining_out": "2817",
+        "utilities": "6715",
+        "household": "5499",
+        "clothing": "2949",
+        "entertainment": "2434",
+        "personal_care": "2048",
+        "health": "2557",
+        "pets": "914",
+        "education": "2254"
+      }
+    },
+    "couple_others": {
+      "survey": "Couples with other related or unrelated persons",
+      "annual": {
+        "groceries": "13643",
+        "dining_out": "4939",
+        "transportation": "9963",
+        "utilities": "9381",
+        "household": "7212",
+        "clothing": "4507",
+        "entertainment": "3980",
+        "personal_care": "2504",
+        "health": "3455",
+        "pets": "943",
+        "education": "3691"
+      }
+    },
+    "other": {
+      "survey": "Other households with related or unrelated persons",
+      "annual": {
+        "groceries": "9014",
+        "dining_out": "4425",
+        "transportation": "6136",
+        "utilities": "6794",
+        "household": "4932",
+        "clothing": "2889",
+        "entertainment": "2209",
+        "personal_care": "1809",
+        "health": "2157",
+        "pets": "854",
+        "education": "1969"
+      }
+    },
+    "all": {
+      "survey": "All classes",
+      "annual": {
+        "groceries": "8579",
+        "dining_out": "3316",
+        "transportation": "6478",
+        "utilities": "6332",
+        "household": "4934",
+        "clothing": "2716",
+        "entertainment": "2730",
+        "personal_care": "1840",
+        "health": "2312",
+        "pets": "756",
+        "education": "1658"
+      }
+    }
+  }
+}

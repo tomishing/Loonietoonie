@@ -363,6 +363,33 @@ class SheetsRepository:
                 names[merchant] = name  # a later row for the same merchant wins
         return names
 
+    def get_settings(self) -> dict[str, str]:
+        settings: dict[str, str] = {}
+        for row in self._read("settings").rows:
+            key = row.values.get("key", "").strip()
+            if key:
+                settings[key] = row.values.get("value", "").strip()  # a later row for a key wins
+        return settings
+
+    def save_settings(self, settings: dict[str, str]) -> None:
+        if not settings:
+            return
+        tab = self._read("settings", fresh=True)
+        now = utc_now_iso()
+        rows = {row.values.get("key", "").strip(): row for row in tab.rows}
+        writes = [
+            ("settings", _with_values(rows[key], tab.headers, {"value": value, "updated_at": now}))
+            for key, value in settings.items()
+            if key in rows
+        ]
+        new = [
+            {"key": key, "value": value, "updated_at": now}
+            for key, value in settings.items()
+            if key not in rows
+        ]
+        self._write_rows(writes)
+        self._append("settings", tab.headers, new)
+
     def save_merchant_names(self, names: dict[str, str]) -> None:
         if not names:
             return

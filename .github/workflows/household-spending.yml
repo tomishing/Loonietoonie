@@ -1,0 +1,58 @@
+# Monthly check for new Statistics Canada data behind "Compared with similar households":
+# a new Survey of Household Spending (every two years) or a new year of the Consumer Price Index.
+# When the rebuilt averages differ from the committed ones, an issue is opened (GitHub notifies
+# the repository owner); nothing is committed automatically.
+name: Household spending data check
+
+on:
+  schedule:
+    - cron: "0 15 1 * *" # the 1st of each month
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Rebuild the averages from Statistics Canada
+        working-directory: backend
+        run: python scripts/build_household_spending.py
+
+      - name: Open an issue when the data changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FILE=backend/app/reference/household_spending.json
+          if git diff --quiet -- "$FILE"; then
+            echo "No new data."
+            exit 0
+          fi
+          years() { python3 -c "import json,sys; d=json.load(sys.stdin); print('survey %s, prices %s' % (d['survey_year'], d['price_year']))"; }
+          BEFORE=$(git show "HEAD:$FILE" | years)
+          AFTER=$(years < "$FILE")
+          TITLE="Household spending averages can be updated"
+          if [ -n "$(gh issue list --state open --search "\"$TITLE\" in:title" --json number --jq '.[].number')" ]; then
+            echo "An issue is already open."
+            exit 0
+          fi
+          gh issue create --title "$TITLE" --body "Statistics Canada published new data for *Compared with similar households*.
+
+          - Committed: $BEFORE
+          - Available now: $AFTER
+
+          To update, run in \`backend/\`:
+
+          \`\`\`
+          .venv/bin/python scripts/build_household_spending.py
+          \`\`\`
+
+          then check the new numbers (a new survey can rename categories), run the checks, and commit \`app/reference/household_spending.json\`. Also update the survey year in specification.md if it changed."

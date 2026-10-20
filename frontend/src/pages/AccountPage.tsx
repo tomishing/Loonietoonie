@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
 import { BankLinks } from '../components/BankLinks'
 import { CategoryList } from '../components/CategoryList'
+import { HouseholdForm } from '../components/HouseholdForm'
 import { Icon } from '../components/Icon'
 
 export function AccountPage() {
@@ -48,6 +49,8 @@ export function AccountPage() {
           </a>
         </li>
       </ul>
+
+      <HouseholdForm />
 
       <BankLinks />
 

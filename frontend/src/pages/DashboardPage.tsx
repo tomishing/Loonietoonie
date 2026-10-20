@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { errorMessages, getSummary, type Summary } from '../api/client'
 import { CategoryBreakdown } from '../components/dashboard/CategoryBreakdown'
+import { HouseholdComparison } from '../components/dashboard/HouseholdComparison'
 import { MonthlyTrend } from '../components/dashboard/MonthlyTrend'
 import { NotableChanges } from '../components/dashboard/NotableChanges'
 import { SpendingHero } from '../components/dashboard/SpendingHero'
@@ -121,6 +122,7 @@ export function DashboardPage() {
                 <NotableChanges summary={summary} categories={categories} />
               </div>
               <CategoryBreakdown summary={summary} categories={categories} />
+              {summary.currency === 'CAD' && <HouseholdComparison categories={categories} />}
               <MonthlyTrend summary={summary} />
               <TopLists summary={summary} />
             </>

@@ -119,3 +119,11 @@ class Repository(Protocol):
     def save_merchant_names(self, names: dict[str, str]) -> None:
         """Add or replace learned names {bank_key: name}, in one write per kind of change."""
         ...
+
+    def get_settings(self) -> dict[str, str]:
+        """The user's settings from the settings tab {key: value} (e.g. household_type, province)."""
+        ...
+
+    def save_settings(self, settings: dict[str, str]) -> None:
+        """Add or replace settings {key: value}, in one write per kind of change."""
+        ...
