@@ -4,10 +4,12 @@ Canada's average for households like theirs (Survey of Household Spending, app/r
 The survey publishes averages by province (all households) and by household type (Canada only),
 not by both, so a household type in a province is estimated as the Canadian average for that type
 times the province's ratio to Canada. Amounts are brought to the latest year's prices with the
-province's Consumer Price Index. Only categories the app sees well are compared, and the user's
-side is the average of the last full months, so a month in progress doesn't count.
+province's Consumer Price Index. Only categories the app sees well are compared: what the user
+spent since January 1 (or since their first purchase this year) next to the same share of a
+typical year.
 """
 
+import calendar
 import json
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
@@ -17,11 +19,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.services.summary import build_frames, shift_month
+from app.services.summary import build_frames
 from app.storage.models import Receipt
 
 DATA_FILE = Path(__file__).resolve().parent.parent / "reference" / "household_spending.json"
-COMPARE_MONTHS = 3
 HOUSEHOLD_TYPE_KEY = "household_type"
 PROVINCE_KEY = "province"
 CURRENCY = "CAD"  # the survey is in Canadian dollars
@@ -66,17 +67,18 @@ class HouseholdSettings(Household):
 
 class ComparisonRow(BaseModel):
     category: str  # e.g. "Groceries", or "Entertainment & Hobbies" for both
-    yours: Decimal  # the user's monthly average
-    typical: Decimal  # similar households' monthly average, at current prices
+    yours: Decimal  # what the user spent in the period
+    typical: Decimal  # what similar households spend in a period this long, at current prices
     difference: Decimal  # yours / typical - 1 (e.g. 0.20 = 20% more)
 
 
 class Comparison(BaseModel):
-    # "ok", "not_set" (no household yet), "no_history" (no full month yet), or "currency" (not CAD)
+    # "ok", "not_set" (no household yet), or "no_history" (nothing to compare yet)
     status: str
     household: str = ""
     region: str = ""
-    months: list[str] = []
+    start: date | None = None  # January 1, or the first purchase this year when records start later
+    end: date | None = None  # today
     survey_year: int = 0
     price_year: int = 0
     rows: list[ComparisonRow] = []
@@ -100,8 +102,8 @@ def settings_view(settings: dict[str, str]) -> HouseholdSettings:
     )
 
 
-def typical_monthly(household_type: str, province: str) -> dict[str, Decimal]:
-    """Similar households' monthly spending per compared category key, at current prices."""
+def typical_annual(household_type: str, province: str) -> dict[str, Decimal]:
+    """Similar households' yearly spending per compared category key, at current prices (unrounded)."""
     data = reference()
     canada = data["provinces"]["CA"]["annual"]
     region = data["provinces"][province]
@@ -112,8 +114,33 @@ def typical_monthly(household_type: str, province: str) -> dict[str, Decimal]:
         if key not in canada or key not in region["annual"] or Decimal(canada[key]) == 0:
             continue
         annual = Decimal(type_value) * Decimal(region["annual"][key]) / Decimal(canada[key])
-        result[key] = (annual * factor / 12).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+        result[key] = annual * factor
     return result
+
+
+def _spent_by_category(lines: Any) -> dict[str, Decimal]:
+    spent: dict[str, Decimal] = {}
+    for category, amount in zip(lines["category"], lines["amount"], strict=True):
+        name = str(category).casefold()
+        spent[name] = spent.get(name, Decimal(0)) + amount
+    return spent
+
+
+def _rows(spent: dict[str, Decimal], expected: dict[str, Decimal]) -> list[ComparisonRow]:
+    """One row per compared category with spending."""
+    rows: list[ComparisonRow] = []
+    for category in reference()["categories"]:
+        names = [name.casefold() for name in category["app_categories"]]
+        total = sum((spent.get(name, Decimal(0)) for name in names), Decimal(0))
+        typical = expected.get(category["key"])
+        if total <= 0 or not typical:
+            continue  # nothing spent here (e.g. no pets) or no survey figure
+        yours = total.quantize(Decimal(1), rounding=ROUND_HALF_UP)
+        difference = (yours / typical - 1).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        rows.append(
+            ComparisonRow(category=category["label"], yours=yours, typical=typical, difference=difference)
+        )
+    return rows
 
 
 def compare(receipts: list[Receipt], settings: dict[str, str], today: date) -> Comparison:
@@ -125,38 +152,27 @@ def compare(receipts: list[Receipt], settings: dict[str, str], today: date) -> C
     lines = frames.lines
     if lines.empty:
         return Comparison(status="no_history")
-    first_month = str(frames.receipts["month"].min())
-    this_month = today.strftime("%Y-%m")
-    months = [
-        m for m in (shift_month(this_month, -o) for o in range(COMPARE_MONTHS, 0, -1)) if m >= first_month
-    ]
-    if not months:
+    # Since January 1 (or the first purchase this year), next to the same share of a typical year.
+    first_day = date.fromisoformat(str(frames.receipts["date"].min()))
+    start = max(date(today.year, 1, 1), first_day)
+    if start > today:
         return Comparison(status="no_history")
-    in_months = lines[lines["month"].isin(months)]
-    spent: dict[str, Decimal] = {}
-    for category, amount in zip(in_months["category"], in_months["amount"], strict=True):
-        name = str(category).casefold()
-        spent[name] = spent.get(name, Decimal(0)) + amount
-
-    typical = typical_monthly(view.household_type, view.province)
-    rows: list[ComparisonRow] = []
-    for category in data["categories"]:
-        total = sum(
-            (spent.get(name.casefold(), Decimal(0)) for name in category["app_categories"]), Decimal(0)
-        )
-        expected = typical.get(category["key"])
-        if total <= 0 or not expected:
-            continue  # nothing spent here (e.g. no pets) or no survey figure
-        yours = (total / len(months)).quantize(Decimal(1), rounding=ROUND_HALF_UP)
-        difference = (yours / expected - 1).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        rows.append(
-            ComparisonRow(category=category["label"], yours=yours, typical=expected, difference=difference)
-        )
+    in_period = lines[(lines["date"] >= start.isoformat()) & (lines["date"] <= today.isoformat())]
+    year_days = 366 if calendar.isleap(today.year) else 365
+    share = Decimal((today - start).days + 1) / year_days
+    expected = {
+        key: (annual * share).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+        for key, annual in typical_annual(view.household_type, view.province).items()
+    }
+    rows = _rows(_spent_by_category(in_period), expected)
+    if not rows:
+        return Comparison(status="no_history")
     return Comparison(
-        status="ok" if rows else "no_history",
+        status="ok",
         household=HOUSEHOLD_TYPES[view.household_type],
         region=data["provinces"][view.province]["name"],
-        months=months,
+        start=start,
+        end=today,
         survey_year=data["survey_year"],
         price_year=data["price_year"],
         rows=rows,

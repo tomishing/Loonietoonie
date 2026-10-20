@@ -605,9 +605,9 @@ export interface HouseholdSettings {
 
 export interface ComparisonRow {
   category: string
-  /** The user's monthly average (decimal string). */
+  /** What the user spent in the period (decimal string). */
   yours: string
-  /** Similar households' monthly average at current prices (decimal string). */
+  /** What similar households spend in a period this long, at current prices (decimal string). */
   typical: string
   /** yours / typical - 1, e.g. "0.20" = 20% more. */
   difference: string
@@ -617,9 +617,13 @@ export interface HouseholdComparison {
   status: 'ok' | 'not_set' | 'no_history'
   household: string
   region: string
-  months: string[]
+  /** January 1, or the first purchase this year when records start later (YYYY-MM-DD). */
+  start: string | null
+  /** Today (YYYY-MM-DD). */
+  end: string | null
   survey_year: number
   price_year: number
+  /** What the user spent since `start`, next to similar households for a period that long. */
   rows: ComparisonRow[]
   source: string
 }
@@ -630,6 +634,11 @@ export function getHousehold(): Promise<HouseholdSettings> {
 
 export function saveHousehold(household_type: string, province: string): Promise<HouseholdSettings> {
   return apiPut<HouseholdSettings>('/api/household', { household_type, province })
+}
+
+/** Forget the household type and province. */
+export function clearHousehold(): Promise<HouseholdSettings> {
+  return request<HouseholdSettings>('DELETE', '/api/household')
 }
 
 export function getHouseholdComparison(): Promise<HouseholdComparison> {

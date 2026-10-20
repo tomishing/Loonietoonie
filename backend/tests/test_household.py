@@ -36,52 +36,14 @@ def test_a_household_type_in_a_province_scales_the_canadian_average() -> None:
     canada, bc = data["provinces"]["CA"], data["provinces"]["BC"]
     couple = data["household_types"]["couple_children"]["annual"]["groceries"]
     expected = (
-        D(couple)
-        * D(bc["annual"]["groceries"])
-        / D(canada["annual"]["groceries"])
-        * D(bc["price_factor"])
-        / 12
+        D(couple) * D(bc["annual"]["groceries"]) / D(canada["annual"]["groceries"]) * D(bc["price_factor"])
     )
 
-    assert household.typical_monthly("couple_children", "BC")["groceries"] == expected.quantize(D(1))
+    assert household.typical_annual("couple_children", "BC")["groceries"] == expected
     # Canada as a whole: the household type's own average.
-    canada_couple = D(couple) * D(canada["price_factor"]) / 12
-    assert household.typical_monthly("couple_children", "CA")["groceries"] == canada_couple.quantize(D(1))
-
-
-def test_compare_uses_the_last_full_months_and_categories_the_household_has() -> None:
-    receipts = [
-        receipt("2026-07-05", "FreshCo", [("Milk", "600", "Groceries"), ("Movie", "40", "Entertainment")]),
-        receipt("2026-08-05", "FreshCo", [("Eggs", "900", "Groceries"), ("Paint", "60", "Hobbies")]),
-        receipt("2026-09-05", "FreshCo", [("Rice", "900", "Groceries")]),
-        receipt("2026-10-02", "FreshCo", [("Bread", "5000", "Groceries")]),  # month in progress: left out
-        receipt("2026-09-06", "Tokyo", [("Snacks", "3000", "Groceries")], currency="JPY"),  # not CAD
-    ]
-
-    result = household.compare(receipts, FAMILY, TODAY)
-
-    assert (result.status, result.household, result.region) == (
-        "ok",
-        "Couple with children",
-        "British Columbia",
+    assert household.typical_annual("couple_children", "CA")["groceries"] == D(couple) * D(
+        canada["price_factor"]
     )
-    assert result.months == ["2026-07", "2026-08", "2026-09"]
-    typical = household.typical_monthly("couple_children", "BC")
-    rows = {r.category: r for r in result.rows}
-    assert set(rows) == {"Groceries", "Entertainment & Hobbies"}  # no pets, no clothing spending
-    assert rows["Groceries"].yours == D(800)
-    assert rows["Groceries"].typical == typical["groceries"]
-    assert rows["Groceries"].difference == (D(800) / typical["groceries"] - 1).quantize(D("0.01"))
-    assert rows["Entertainment & Hobbies"].yours == D(33)  # (40 + 60) / 3, Entertainment and Hobbies together
-
-
-def test_compare_counts_only_months_since_the_first_purchase() -> None:
-    result = household.compare(
-        [receipt("2026-09-10", "FreshCo", [("Milk", "500", "Groceries")])], FAMILY, TODAY
-    )
-
-    assert result.months == ["2026-09"]
-    assert result.rows[0].yours == D(500)
 
 
 @pytest.mark.parametrize(
@@ -93,7 +55,6 @@ def test_compare_counts_only_months_since_the_first_purchase() -> None:
             {"household_type": "couple"},
             "not_set",
         ),
-        ([receipt("2026-10-10", "FreshCo", [("Milk", "5", "Groceries")])], FAMILY, "no_history"),
         ([], FAMILY, "no_history"),
     ],
 )
@@ -135,3 +96,61 @@ def test_household_api(client: tuple[TestClient, SheetsRepository]) -> None:
     moved = http.put("/api/household", json={"household_type": "couple_children", "province": "ON"}).json()
     assert moved["province"] == "ON"  # replaced, not added twice
     assert repository.get_settings()["province"] == "ON"
+
+    cleared = http.delete("/api/household").json()
+    assert (cleared["household_type"], cleared["province"]) == ("", "")
+    assert http.get("/api/household/comparison").json()["status"] == "not_set"
+
+
+def test_year_to_date_adds_up_since_january_first() -> None:
+    receipts = [
+        receipt("2025-12-30", "FreshCo", [("Milk", "999", "Groceries")]),  # last year: left out
+        receipt("2026-01-01", "FreshCo", [("Eggs", "300", "Groceries")]),
+        receipt("2026-06-15", "FreshCo", [("Rice", "400", "Groceries"), ("Shirt", "50", "Clothing")]),
+        receipt("2026-10-20", "FreshCo", [("Bread", "5", "Groceries")]),  # today counts
+    ]
+
+    result = household.compare(receipts, FAMILY, TODAY)
+
+    assert (result.status, result.household, result.region) == (
+        "ok",
+        "Couple with children",
+        "British Columbia",
+    )
+    assert (result.start, result.end) == (date(2026, 1, 1), TODAY)
+    rows = {r.category: r for r in result.rows}
+    assert set(rows) == {"Groceries", "Clothing"}  # only categories with spending
+    annual = household.typical_annual("couple_children", "BC")
+    share = D((TODAY - date(2026, 1, 1)).days + 1) / 365  # 293 of 365 days
+    assert rows["Groceries"].yours == D(705)
+    assert rows["Groceries"].typical == (annual["groceries"] * share).quantize(D(1))
+    assert rows["Clothing"].yours == D(50)
+
+
+def test_year_to_date_starts_at_the_first_purchase_when_records_start_later() -> None:
+    receipts = [
+        receipt("2026-09-01", "FreshCo", [("Milk", "500", "Groceries")]),
+        receipt("2026-10-02", "FreshCo", [("Eggs", "100", "Groceries")]),
+    ]
+
+    result = household.compare(receipts, FAMILY, TODAY)
+
+    assert result.start == date(2026, 9, 1)
+    days = (TODAY - date(2026, 9, 1)).days + 1
+    expected = (household.typical_annual("couple_children", "BC")["groceries"] * days / 365).quantize(D(1))
+    assert result.rows[0].typical == expected
+
+
+def test_housing_and_entertainment_with_hobbies_are_compared() -> None:
+    receipts = [
+        receipt("2026-03-01", "231 Lane St", [("Rent", "2500", "Housing")]),
+        receipt("2026-03-02", "Cineplex", [("Movie", "20", "Entertainment")]),
+        receipt("2026-03-03", "Michaels", [("Paint", "30", "Hobbies")]),
+        receipt("2026-03-04", "Petsmart", [("Food", "0", "Pets")]),  # nothing spent: no row
+    ]
+
+    rows = {r.category: r for r in household.compare(receipts, FAMILY, TODAY).rows}
+
+    assert set(rows) == {"Housing", "Entertainment & Hobbies"}
+    assert rows["Housing"].yours == D(2500)
+    assert rows["Entertainment & Hobbies"].yours == D(50)

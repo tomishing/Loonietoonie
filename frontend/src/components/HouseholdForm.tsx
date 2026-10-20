@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router'
-import { errorMessages, getHousehold, saveHousehold, type HouseholdSettings } from '../api/client'
+import { clearHousehold, errorMessages, getHousehold, saveHousehold, type HouseholdSettings } from '../api/client'
 
 /** Account page: who lives in the household and where, for "Compared with similar households". */
 export function HouseholdForm() {
@@ -41,6 +41,25 @@ export function HouseholdForm() {
     }
   }
 
+  const clear = async () => {
+    if (!window.confirm('Clear your household? Patterns stops comparing with similar households until you set it again.'))
+      return
+    setBusy(true)
+    setNotice(null)
+    try {
+      const cleared = await clearHousehold()
+      setSettings(cleared)
+      setHouseholdType('')
+      setProvince('')
+      setNotice({ tone: 'ok', text: 'Cleared.' })
+    } catch (error) {
+      setNotice({ tone: 'error', text: errorMessages(error).join(' ') })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const isSet = settings !== null && settings.household_type !== '' && settings.province !== ''
   const changed = settings !== null && (householdType !== settings.household_type || province !== settings.province)
 
   return (
@@ -80,14 +99,21 @@ export function HouseholdForm() {
               ))}
             </select>
           </label>
-          <button
-            type="button"
-            className="button button-primary"
-            onClick={() => void save()}
-            disabled={busy || !householdType || !province || !changed}
-          >
-            {busy ? 'Saving…' : 'Save'}
-          </button>
+          <div className="household-form-actions">
+            <button
+              type="button"
+              className="button button-primary"
+              onClick={() => void save()}
+              disabled={busy || !householdType || !province || !changed}
+            >
+              {busy ? 'Saving…' : 'Save'}
+            </button>
+            {isSet && (
+              <button type="button" className="button button-ghost" onClick={() => void clear()} disabled={busy}>
+                Clear
+              </button>
+            )}
+          </div>
         </>
       )}
       {notice && (

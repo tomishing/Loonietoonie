@@ -31,6 +31,13 @@ def save_household(body: service.Household, repository: RepositoryDep) -> servic
     return service.settings_view(repository.get_settings())
 
 
+@router.delete("", response_model=service.HouseholdSettings)
+def clear_household(repository: RepositoryDep) -> service.HouseholdSettings:
+    """Forget the household type and province (Patterns stops comparing until they're set again)."""
+    repository.save_settings({service.HOUSEHOLD_TYPE_KEY: "", service.PROVINCE_KEY: ""})
+    return service.settings_view(repository.get_settings())
+
+
 @router.get("/comparison", response_model=service.Comparison)
 def get_comparison(repository: RepositoryDep) -> service.Comparison:
     """The user's monthly spending per category next to similar households' (Statistics Canada)."""

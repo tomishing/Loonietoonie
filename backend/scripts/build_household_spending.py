@@ -50,6 +50,9 @@ HOUSEHOLD_TYPES = {
 # App categories compared with the survey: survey lines added up, minus lines that belong to other
 # app categories (e.g. package trips are Travel, computers and TVs are Household > Electronics).
 COMPARED = [
+    # Rent, or mortgage payments, repairs, condo fees, property taxes, and insurance for the home
+    # (water, fuel, and electricity are Utilities; second homes and hotels aren't Housing).
+    ("housing", "Housing", ["Housing"], ["Rented living quarters", "Owned living quarters"], []),
     ("groceries", "Groceries", ["Groceries"], ["Food purchased from stores"], []),
     ("dining_out", "Dining Out", ["Dining Out"], ["Food purchased from restaurants"], []),
     (

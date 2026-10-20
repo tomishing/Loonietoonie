@@ -3,7 +3,7 @@ import { rememberHouseholdPromptDismissed } from '../../lib/householdPrompt'
 import type { ComparisonRow, HouseholdComparison as Comparison } from '../../api/client'
 import type { CategoriesState } from '../../hooks/useCategories'
 import { parseDecimal } from '../../lib/decimal'
-import { formatMoney, formatMonth } from '../../lib/format'
+import { formatDate, formatMoney } from '../../lib/format'
 import { categoryEmoji } from './labels'
 
 const CURRENCY = 'CAD'
@@ -55,13 +55,18 @@ export function HouseholdComparison({
     )
   }
 
-  const max = comparison.rows.reduce((top, row) => {
+  return <ComparisonCard comparison={comparison} categories={categories} />
+}
+
+function ComparisonCard({ comparison, categories }: { comparison: Comparison; categories: CategoriesState }) {
+  const rows = comparison.rows
+  const max = rows.reduce((top, row) => {
     const values = [parseDecimal(row.yours) ?? 0n, parseDecimal(row.typical) ?? 0n]
     return values.reduce((a, b) => (b > a ? b : a), top)
   }, 0n)
-  const first = comparison.months[0]
-  const last = comparison.months[comparison.months.length - 1]
-  const span = first === last ? formatMonth(first) : `${formatMonth(first)} – ${formatMonth(last)}`
+  const start = comparison.start ?? ''
+  const since = start.endsWith('-01-01') ? 'Jan 1' : formatDate(start)
+  const yours = `since ${since}`
 
   return (
     <section className="card" aria-labelledby="household-compare-title">
@@ -71,7 +76,7 @@ export function HouseholdComparison({
         </h2>
         <p className="legend" aria-hidden="true">
           <span className="legend-item">
-            <span className="swatch swatch-bar" /> You, per month
+            <span className="swatch swatch-bar" /> You, since {since}
           </span>
           <span className="legend-item">
             <span className="swatch swatch-tick" /> Similar households
@@ -79,12 +84,13 @@ export function HouseholdComparison({
         </p>
       </div>
       <p className="muted">
-        {comparison.household}, {comparison.region}. Your average month ({span}) next to Statistics Canada's{' '}
-        {comparison.survey_year} averages, in {comparison.price_year} prices.
+        {comparison.household}, {comparison.region}. What you've spent from {formatDate(start)} to today, next to the
+        same share of a typical year (Statistics Canada's {comparison.survey_year} averages, in {comparison.price_year}{' '}
+        prices; seasonal spending isn't modelled).
       </p>
       <ul className="category-bars">
-        {comparison.rows.map((row) => {
-          const description = `${row.category}: ${formatMoney(row.yours, CURRENCY)} a month, similar households ${formatMoney(row.typical, CURRENCY)} (${versus(row)})`
+        {rows.map((row) => {
+          const description = `${row.category}: ${formatMoney(row.yours, CURRENCY)} ${yours}, similar households ${formatMoney(row.typical, CURRENCY)} (${versus(row)})`
           return (
             <li key={row.category} className="category-item">
               <div className="category-bar" tabIndex={0} aria-label={description}>
@@ -98,7 +104,7 @@ export function HouseholdComparison({
                 <span className="category-amount">{formatMoney(row.yours, CURRENCY)}</span>
                 <span className="category-delta">{versus(row)}</span>
                 <span className="bar-tooltip" role="tooltip">
-                  <strong>{formatMoney(row.yours, CURRENCY)}</strong> your average month
+                  <strong>{formatMoney(row.yours, CURRENCY)}</strong> {yours}
                   <br />
                   <strong>{formatMoney(row.typical, CURRENCY)}</strong> similar households
                 </span>

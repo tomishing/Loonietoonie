@@ -2568,3 +2568,9 @@ button.category-bar {
   display: flex;
   gap: 8px;
 }
+
+.household-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

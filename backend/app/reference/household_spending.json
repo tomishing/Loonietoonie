@@ -4,6 +4,13 @@
   "price_year": 2025,
   "categories": [
     {
+      "key": "housing",
+      "label": "Housing",
+      "app_categories": [
+        "Housing"
+      ]
+    },
+    {
       "key": "groceries",
       "label": "Groceries",
       "app_categories": [
@@ -87,6 +94,7 @@
       "name": "Newfoundland and Labrador",
       "price_factor": "1.0327",
       "annual": {
+        "housing": "10807",
         "groceries": "10809",
         "dining_out": "2455",
         "transportation": "6855",
@@ -104,6 +112,7 @@
       "name": "Prince Edward Island",
       "price_factor": "1.0327",
       "annual": {
+        "housing": "12252",
         "groceries": "8349",
         "dining_out": "3637",
         "transportation": "7091",
@@ -121,6 +130,7 @@
       "name": "Nova Scotia",
       "price_factor": "1.0442",
       "annual": {
+        "housing": "13397",
         "groceries": "7831",
         "dining_out": "2812",
         "transportation": "6608",
@@ -138,6 +148,7 @@
       "name": "New Brunswick",
       "price_factor": "1.0394",
       "annual": {
+        "housing": "11516",
         "groceries": "8488",
         "dining_out": "2700",
         "transportation": "7151",
@@ -155,6 +166,7 @@
       "name": "Quebec",
       "price_factor": "1.0482",
       "annual": {
+        "housing": "14465",
         "groceries": "8634",
         "dining_out": "2464",
         "transportation": "5416",
@@ -172,6 +184,7 @@
       "name": "Ontario",
       "price_factor": "1.0435",
       "annual": {
+        "housing": "23060",
         "groceries": "7974",
         "dining_out": "3686",
         "transportation": "6486",
@@ -189,6 +202,7 @@
       "name": "Manitoba",
       "price_factor": "1.0378",
       "annual": {
+        "housing": "14624",
         "groceries": "9570",
         "dining_out": "3083",
         "transportation": "7201",
@@ -206,6 +220,7 @@
       "name": "Saskatchewan",
       "price_factor": "1.0356",
       "annual": {
+        "housing": "14171",
         "groceries": "9528",
         "dining_out": "3128",
         "transportation": "7097",
@@ -223,6 +238,7 @@
       "name": "Alberta",
       "price_factor": "1.0494",
       "annual": {
+        "housing": "19288",
         "groceries": "9936",
         "dining_out": "4015",
         "transportation": "8108",
@@ -240,6 +256,7 @@
       "name": "British Columbia",
       "price_factor": "1.0483",
       "annual": {
+        "housing": "23583",
         "groceries": "8530",
         "dining_out": "3630",
         "transportation": "6520",
@@ -257,6 +274,7 @@
       "name": "Canada",
       "price_factor": "1.0452",
       "annual": {
+        "housing": "19319",
         "groceries": "8579",
         "dining_out": "3316",
         "transportation": "6478",
@@ -275,6 +293,7 @@
     "one_person": {
       "survey": "One person households",
       "annual": {
+        "housing": "13452",
         "groceries": "4595",
         "dining_out": "1866",
         "transportation": "3700",
@@ -291,6 +310,7 @@
     "couple": {
       "survey": "Couples without children",
       "annual": {
+        "housing": "17337",
         "groceries": "8178",
         "dining_out": "3402",
         "transportation": "6309",
@@ -307,6 +327,7 @@
     "couple_children": {
       "survey": "Couples with children",
       "annual": {
+        "housing": "26338",
         "groceries": "12954",
         "dining_out": "4517",
         "transportation": "9538",
@@ -323,6 +344,7 @@
     "lone_parent": {
       "survey": "Lone-parent households with no additional persons",
       "annual": {
+        "housing": "18637",
         "groceries": "8099",
         "dining_out": "2817",
         "utilities": "6715",
@@ -338,6 +360,7 @@
     "couple_others": {
       "survey": "Couples with other related or unrelated persons",
       "annual": {
+        "housing": "30490",
         "groceries": "13643",
         "dining_out": "4939",
         "transportation": "9963",
@@ -354,6 +377,7 @@
     "other": {
       "survey": "Other households with related or unrelated persons",
       "annual": {
+        "housing": "20473",
         "groceries": "9014",
         "dining_out": "4425",
         "transportation": "6136",
@@ -370,6 +394,7 @@
     "all": {
       "survey": "All classes",
       "annual": {
+        "housing": "19319",
         "groceries": "8579",
         "dining_out": "3316",
         "transportation": "6478",
