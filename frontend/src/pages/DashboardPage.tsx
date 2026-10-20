@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { errorMessages, getSummary, type Summary } from '../api/client'
+import { errorMessages, getHouseholdComparison, getSummary, type HouseholdComparison as Comparison, type Summary } from '../api/client'
 import { CategoryBreakdown } from '../components/dashboard/CategoryBreakdown'
-import { HouseholdComparison } from '../components/dashboard/HouseholdComparison'
+import { HouseholdComparison, HouseholdPrompt } from '../components/dashboard/HouseholdComparison'
+import { householdPromptDismissed } from '../lib/householdPrompt'
 import { MonthlyTrend } from '../components/dashboard/MonthlyTrend'
 import { NotableChanges } from '../components/dashboard/NotableChanges'
 import { SpendingHero } from '../components/dashboard/SpendingHero'
@@ -48,6 +49,15 @@ export function DashboardPage() {
     }
   }, [month, currency, queryKey])
 
+  // "Compared with similar households": loaded once; optional, so a failure just leaves it out.
+  const [comparison, setComparison] = useState<Comparison | null>(null)
+  const [promptDismissed, setPromptDismissed] = useState(householdPromptDismissed)
+  useEffect(() => {
+    getHouseholdComparison()
+      .then(setComparison)
+      .catch(() => setComparison(null))
+  }, [])
+
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams)
     if (value) next.set(key, value)
@@ -57,6 +67,8 @@ export function DashboardPage() {
 
   // While a new month loads, the previous one stays on screen, dimmed (no layout jump).
   const summary = loaded?.summary ?? null
+  const showPrompt =
+    comparison?.status === 'not_set' && !promptDismissed && (summary === null || summary.currency === 'CAD')
   const refreshing = loaded !== null && loaded.key !== queryKey && error?.key !== queryKey
 
   return (
@@ -94,6 +106,8 @@ export function DashboardPage() {
           </p>
         ))}
 
+      {showPrompt && <HouseholdPrompt onDismiss={() => setPromptDismissed(true)} />}
+
       {!summary && !error && <DashboardSkeleton withTitle={false} />}
 
       {summary && (
@@ -122,7 +136,9 @@ export function DashboardPage() {
                 <NotableChanges summary={summary} categories={categories} />
               </div>
               <CategoryBreakdown summary={summary} categories={categories} />
-              {summary.currency === 'CAD' && <HouseholdComparison categories={categories} />}
+              {summary.currency === 'CAD' && (
+                <HouseholdComparison comparison={comparison} categories={categories} promptShown={showPrompt} />
+              )}
               <MonthlyTrend summary={summary} />
               <TopLists summary={summary} />
             </>

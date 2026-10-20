@@ -2549,3 +2549,22 @@ button.category-bar {
   margin: 12px 0 0;
   font-size: 0.85rem;
 }
+
+.household-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  max-width: none;
+  margin: 0 0 16px;
+}
+
+.household-prompt p {
+  flex: 1 1 18rem;
+  margin: 0;
+}
+
+.household-prompt-actions {
+  display: flex;
+  gap: 8px;
+}

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { getHouseholdComparison, type ComparisonRow, type HouseholdComparison as Comparison } from '../../api/client'
+import { rememberHouseholdPromptDismissed } from '../../lib/householdPrompt'
+import type { ComparisonRow, HouseholdComparison as Comparison } from '../../api/client'
 import type { CategoriesState } from '../../hooks/useCategories'
 import { parseDecimal } from '../../lib/decimal'
 import { formatMoney, formatMonth } from '../../lib/format'
@@ -24,19 +24,21 @@ function emoji(categories: CategoriesState, label: string): string {
   return label === 'Entertainment & Hobbies' ? categoryEmoji(categories, 'Entertainment') : categoryEmoji(categories, label)
 }
 
-/** Patterns: monthly spending per category next to similar households (Statistics Canada). */
-export function HouseholdComparison({ categories }: { categories: CategoriesState }) {
-  const [comparison, setComparison] = useState<Comparison | null>(null)
-
-  useEffect(() => {
-    getHouseholdComparison()
-      .then(setComparison)
-      .catch(() => setComparison(null)) // optional card: leave it out if it can't load
-  }, [])
-
+/** Patterns: monthly spending per category next to similar households (Statistics Canada).
+ * `promptShown`: the banner at the top already invites the user, so the card stays out. */
+export function HouseholdComparison({
+  comparison,
+  categories,
+  promptShown,
+}: {
+  comparison: Comparison | null
+  categories: CategoriesState
+  promptShown: boolean
+}) {
   if (comparison === null || comparison.status === 'no_history') return null
 
   if (comparison.status === 'not_set') {
+    if (promptShown) return null
     return (
       <section className="card" aria-labelledby="household-compare-title">
         <h2 id="household-compare-title" className="card-title">
@@ -110,5 +112,32 @@ export function HouseholdComparison({ categories }: { categories: CategoriesStat
         are estimates, not targets. <Link to="/account#household">Change your household</Link>
       </p>
     </section>
+  )
+}
+
+/** Top of Patterns, until the household is set or the user says "Not now" (on this device). */
+export function HouseholdPrompt({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div className="notice notice-info household-prompt" role="status">
+      <p>
+        <strong>Compare with similar households.</strong> Tell us who lives with you and which province you live in, and
+        Patterns will show how your spending compares with similar households there (Statistics Canada averages).
+      </p>
+      <div className="household-prompt-actions">
+        <Link to="/account#household" className="button button-primary button-small">
+          Set up
+        </Link>
+        <button
+          type="button"
+          className="button button-ghost button-small"
+          onClick={() => {
+            rememberHouseholdPromptDismissed()
+            onDismiss()
+          }}
+        >
+          Not now
+        </button>
+      </div>
+    </div>
   )
 }
