@@ -313,8 +313,7 @@
 }
 
 .login-mascot {
-  border-radius: 26px;
-  box-shadow: 0 14px 32px rgba(214, 58, 111, 0.25);
+  filter: drop-shadow(0 10px 16px rgba(16, 29, 26, 0.2));
   animation: float 4s ease-in-out infinite;
 }
 
@@ -481,9 +480,8 @@
 }
 
 .splash-mascot {
-  width: 88px;
+  width: 69px;
   height: 88px;
-  border-radius: 26px;
 }
 
 .splash-mascot-busy {
@@ -1768,7 +1766,6 @@ details[open] .receipt-toggle {
 }
 
 .scanning-mascot {
-  border-radius: 14px;
   animation: bob 1.4s ease-in-out infinite;
 }
 
@@ -2391,7 +2388,6 @@ button.category-bar {
 
 .assistant-avatar {
   flex: none;
-  border-radius: 10px;
 }
 
 .bubble-assistant {

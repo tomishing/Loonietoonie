@@ -227,7 +227,7 @@ export function ChatPage() {
         {loading && <p className="muted typing">Loading your conversations…</p>}
         {!loading && turns.length === 0 && (
           <div className="chat-welcome">
-            <img src="/favicon.svg" alt="" width={56} height={56} />
+            <img src="/loon-logo.png" alt="" width={44} height={56} />
             <p>Hi! Ask me anything about your spending. I look up the numbers from your receipts and bank and card transactions.</p>
             <div className="suggestions">
               {SUGGESTIONS.map((suggestion) => (
@@ -246,7 +246,7 @@ export function ChatPage() {
             </div>
           ) : (
             <div key={index} className="assistant-row">
-              <img className="assistant-avatar" src="/favicon.svg" alt="" width={32} height={32} />
+              <img className="assistant-avatar" src="/loon-logo.png" alt="" width={25} height={32} />
               <div className={`bubble bubble-assistant${turn.error ? ' bubble-error' : ''}`}>
                 {turn.content ? (
                   <ChatText text={turn.content} />

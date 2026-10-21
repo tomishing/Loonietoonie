@@ -39,7 +39,7 @@ export function LoginPage() {
       <div className="login-glow" aria-hidden="true" />
       <div className="login-content">
         <div className="login-brand">
-          <img className="login-mascot" src="/favicon.svg" alt="" width={88} height={88} />
+          <img className="login-mascot" src="/loon-logo.png" alt="" width={69} height={88} />
           <p className="login-wordmark">LoonieToonie</p>
         </div>
         <h1 className="login-title">See where your money really goes.</h1>
@@ -88,7 +88,7 @@ export function SplashScreen({ error = false }: { error?: boolean }) {
 
   return (
     <main className="splash" aria-busy={!error}>
-      <img className={error ? 'splash-mascot' : 'splash-mascot splash-mascot-busy'} src="/favicon.svg" alt="" />
+      <img className={error ? 'splash-mascot' : 'splash-mascot splash-mascot-busy'} src="/loon-logo.png" alt="" />
       {error ? (
         <>
           <p className="notice notice-error" role="alert">
