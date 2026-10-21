@@ -313,7 +313,7 @@
 }
 
 .login-mascot {
-  filter: drop-shadow(0 10px 16px rgba(16, 29, 26, 0.2));
+  filter: drop-shadow(0 10px 16px rgba(233, 116, 81, 0.3));
   animation: float 4s ease-in-out infinite;
 }
 
@@ -480,7 +480,7 @@
 }
 
 .splash-mascot {
-  width: 69px;
+  width: 88px;
   height: 88px;
 }
 

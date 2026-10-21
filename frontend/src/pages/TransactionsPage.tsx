@@ -286,7 +286,7 @@ export function TransactionsPage() {
 
         {state.status === 'loaded' && state.receipts.length === 0 && (
           <div className="card empty">
-            <img src="/loon-logo.png" alt="" width={50} height={64} />
+            <img src="/loon-badge.png" alt="" width={64} height={64} />
             <p>{month || category || subcategory ? 'No receipts match these filters.' : 'No receipts yet.'}</p>
             <Link to="/scan" className="button button-primary">
               <Icon name="camera" size={20} />

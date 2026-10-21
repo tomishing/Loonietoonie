@@ -14,7 +14,7 @@ export default defineConfig(({ mode }) => {
         registerType: 'autoUpdate',
         // Registered in main.tsx for the web only (the Android app ships its files in the APK).
         injectRegister: false,
-        includeAssets: ['favicon.png', 'apple-touch-icon.png', 'loon-logo.png'],
+        includeAssets: ['favicon.png', 'apple-touch-icon.png', 'loon-badge.png'],
         manifest: {
           name: 'LoonieToonie',
           short_name: 'LoonieToonie',

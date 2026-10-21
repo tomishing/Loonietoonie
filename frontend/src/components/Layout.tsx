@@ -32,7 +32,7 @@ export function Layout() {
     <div className="app">
       <header className="app-header">
         <NavLink to="/" className="brand">
-          <img src="/loon-logo.png" alt="" width={31} height={40} />
+          <img src="/loon-badge.png" alt="" width={36} height={36} />
           <span>LoonieToonie</span>
         </NavLink>
         <nav className="top-nav" aria-label="Main">

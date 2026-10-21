@@ -205,7 +205,7 @@ export function ScanPage() {
           </div>
         )}
         <div className="scanning-text" role="status" aria-live="polite">
-          <img className="scanning-mascot" src="/loon-logo.png" alt="" width={37} height={48} />
+          <img className="scanning-mascot" src="/loon-badge.png" alt="" width={48} height={48} />
           <h1>Scanning your receipt…</h1>
           <p className="muted">{step.stage}…</p>
           <div
