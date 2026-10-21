@@ -44,7 +44,7 @@
 }
 
 .brand img {
-  border-radius: 9px;
+  flex: none;
 }
 
 .top-nav,
