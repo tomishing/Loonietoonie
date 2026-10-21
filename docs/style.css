@@ -48,13 +48,6 @@ header {
   flex: none;
 }
 
-/* The loon's head is near-black, so outline it on the dark background. */
-@media (prefers-color-scheme: dark) {
-  .logo {
-    filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.7)) drop-shadow(0 0 4px rgba(255, 255, 255, 0.25));
-  }
-}
-
 h1,
 h2 {
   color: var(--text-h);
