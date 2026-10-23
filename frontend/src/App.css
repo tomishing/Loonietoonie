@@ -2782,3 +2782,9 @@ button.category-bar {
 .bank-sync-bar > .muted {
   flex: 1 1 auto;
 }
+
+.card-head-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}

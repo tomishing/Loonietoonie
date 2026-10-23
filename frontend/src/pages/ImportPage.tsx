@@ -312,6 +312,16 @@ export function ImportPage() {
     }
   }
 
+  // Drop the chosen file without importing; the account choice stays.
+  const cancelFile = () => {
+    setFile(null)
+    setPreviewState(null)
+    setMapping(null)
+    setIncluded(new Set())
+    setEditingMapping(false)
+    setError(null)
+  }
+
   const toImport = preview ? preview.counts.new + included.size : 0
   const newRows = preview?.rows.filter((row) => row.status === 'new') ?? []
   const lookalikes = preview?.rows.filter((row) => row.status === 'possible_duplicate') ?? []
@@ -415,12 +425,18 @@ export function ImportPage() {
             <h2 id="import-preview-title" className="card-title">
               Check before importing
             </h2>
-            {preview.mapping && !editingMapping && (
-              <button type="button" className="chip chip-action" onClick={() => setEditingMapping(true)}>
-                <Icon name="pencil" size={16} />
-                Change
+            <div className="card-head-actions">
+              {preview.mapping && !editingMapping && (
+                <button type="button" className="chip chip-action" onClick={() => setEditingMapping(true)}>
+                  <Icon name="pencil" size={16} />
+                  Change
+                </button>
+              )}
+              <button type="button" className="chip chip-action" onClick={cancelFile} disabled={busy !== null}>
+                <Icon name="close" size={16} />
+                Cancel
               </button>
-            )}
+            </div>
           </div>
           {!preview.mapping_confident && (
             <p className="notice notice-warn">Please check how the file was read: some columns were a guess.</p>
