@@ -1,20 +1,31 @@
 import { useState, type FormEvent } from 'react'
-import { createAccount, errorMessages, updateAccount, type AccountDraft, type BankAccount } from '../api/client'
+import {
+  createAccount,
+  deleteAccount,
+  errorMessages,
+  updateAccount,
+  type AccountDraft,
+  type BankAccount,
+} from '../api/client'
+import { Icon } from './Icon'
 
-const CURRENCIES = ['CAD', 'USD', 'EUR', 'GBP', 'JPY']
+const CURRENCIES = ['CAD', 'USD', 'JPY', 'EUR', 'GBP', 'AUD', 'CNY', 'INR', 'KRW', 'MXN']
 
-/** Add or edit an account that statement files are imported into. */
+/** Add, edit, or remove an account that statement files are imported into. */
 export function AccountForm({
   account,
   defaultCurrency,
   onSaved,
   onCancel,
+  onRemoved,
 }: {
   /** The account to edit; omitted to add one. */
   account?: BankAccount
   defaultCurrency: string
   onSaved: (account: BankAccount) => void
   onCancel: () => void
+  /** Editing only: shows Remove; called after the account was removed. */
+  onRemoved?: (accountId: string, withTransactions: boolean) => void
 }) {
   const [draft, setDraft] = useState<AccountDraft>({
     institution: account?.institution ?? '',
@@ -41,6 +52,24 @@ export function AccountForm({
     }
   }
 
+  const remove = async () => {
+    if (!account || !onRemoved) return
+    const name = account.name || 'this account'
+    if (!window.confirm(`Remove ${name}?`)) return
+    const removeTransactions = window.confirm(
+      `Also remove the transactions imported into ${name}?\n\nOK: remove them from your spending and spreadsheet (marked deleted).\nCancel: keep them.`,
+    )
+    setBusy(true)
+    setError(null)
+    try {
+      await deleteAccount(account.account_id, removeTransactions)
+      onRemoved(account.account_id, removeTransactions)
+    } catch (failure) {
+      setError(errorMessages(failure))
+      setBusy(false)
+    }
+  }
+
   return (
     <form className="account-form" onSubmit={(event) => void submit(event)}>
       <label>
@@ -58,7 +87,7 @@ export function AccountForm({
         <input
           value={draft.name}
           onChange={(event) => set('name', event.target.value)}
-          placeholder="Aventura Visa"
+          placeholder="e.g. Chequing, Savings, Visa"
           maxLength={100}
           required
         />
@@ -103,6 +132,17 @@ export function AccountForm({
         <button type="button" className="button button-ghost" onClick={onCancel} disabled={busy}>
           Cancel
         </button>
+        {account && onRemoved && (
+          <button
+            type="button"
+            className="button button-ghost account-remove"
+            onClick={() => void remove()}
+            disabled={busy}
+          >
+            <Icon name="trash" size={18} />
+            Remove account
+          </button>
+        )}
       </div>
     </form>
   )

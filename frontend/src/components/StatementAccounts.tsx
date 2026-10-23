@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import {
-  deleteAccount,
+  countPlaidDuplicates,
   errorMessages,
   listAccounts,
   listImports,
+  removePlaidDuplicates,
   undoImport,
   type AccountInfo,
   type ImportRecord,
@@ -91,6 +92,9 @@ export function StatementAccounts() {
   // The account being edited, "new" while adding one, or null.
   const [editing, setEditing] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice>(null)
+  // Imported charges that Plaid had already imported for the same card (imports before 2026-10-23).
+  const [duplicates, setDuplicates] = useState(0)
+  const [cleaning, setCleaning] = useState(false)
 
   const load = useCallback(() => {
     listAccounts()
@@ -99,24 +103,30 @@ export function StatementAccounts() {
         setLoadError(null)
       })
       .catch((error: unknown) => setLoadError(errorMessages(error)))
+    countPlaidDuplicates()
+      .then(setDuplicates)
+      .catch(() => setDuplicates(0))
   }, [])
-  useEffect(load, [load])
 
-  const remove = async (info: AccountInfo) => {
-    const name = info.account.name || 'this account'
-    if (!window.confirm(`Remove ${name}?`)) return
-    const removeTransactions = window.confirm(
-      `Also remove the transactions imported into ${name}?\n\nOK: remove them from your spending and spreadsheet (marked deleted).\nCancel: keep them.`,
+  const cleanUp = async () => {
+    if (
+      !window.confirm(
+        `Remove ${duplicates} imported transaction${duplicates === 1 ? '' : 's'} that Plaid had already imported? The Plaid copies, with their categories and receipt matches, stay.`,
+      )
     )
+      return
+    setCleaning(true)
     try {
-      await deleteAccount(info.account.account_id, removeTransactions)
-      setNotice({ tone: 'ok', text: `${name} was removed${removeTransactions ? ' with its transactions' : ''}.` })
+      const removed = await removePlaidDuplicates()
+      setNotice({ tone: 'ok', text: `Removed ${removed} duplicate transaction${removed === 1 ? '' : 's'}.` })
     } catch (error) {
       setNotice({ tone: 'error', text: errorMessages(error).join(' ') })
     } finally {
+      setCleaning(false)
       load()
     }
   }
+  useEffect(load, [load])
 
   if (loadError) {
     return (
@@ -148,6 +158,23 @@ export function StatementAccounts() {
         bank.
       </p>
 
+      {duplicates > 0 && (
+        <div className="notice notice-warn bank-reconnect" role="status">
+          <p>
+            {duplicates} imported transaction{duplicates === 1 ? ' repeats a charge' : 's repeat charges'} that Plaid had
+            already imported for the same card.
+          </p>
+          <button
+            type="button"
+            className="button button-primary button-small"
+            onClick={() => void cleanUp()}
+            disabled={cleaning}
+          >
+            {cleaning ? 'Removing…' : 'Remove duplicates'}
+          </button>
+        </div>
+      )}
+
       {accounts.length > 0 && (
         <ul className="bank-items">
           {accounts.map((info) => (
@@ -161,6 +188,14 @@ export function StatementAccounts() {
                     load()
                   }}
                   onCancel={() => setEditing(null)}
+                  onRemoved={(_, withTransactions) => {
+                    setEditing(null)
+                    setNotice({
+                      tone: 'ok',
+                      text: `${info.account.name || 'The account'} was removed${withTransactions ? ' with its transactions' : ''}.`,
+                    })
+                    load()
+                  }}
                 />
               ) : (
                 <>
@@ -178,17 +213,7 @@ export function StatementAccounts() {
                           : ' · nothing imported yet'}
                       </span>
                     </span>
-                    <Link
-                      to={`/import?account=${encodeURIComponent(info.account.account_id)}`}
-                      className="button button-secondary button-small"
-                    >
-                      Import
-                    </Link>
-                  </div>
-                  <details className="account-details">
-                    <summary>Imports and settings</summary>
-                    <ImportHistory accountId={info.account.account_id} onChanged={load} />
-                    <div className="household-form-actions">
+                    <div className="card-head-actions">
                       <button
                         type="button"
                         className="button button-ghost button-small"
@@ -197,15 +222,17 @@ export function StatementAccounts() {
                         <Icon name="pencil" size={16} />
                         Edit
                       </button>
-                      <button
-                        type="button"
-                        className="button button-ghost button-small"
-                        onClick={() => void remove(info)}
+                      <Link
+                        to={`/import?account=${encodeURIComponent(info.account.account_id)}`}
+                        className="button button-secondary button-small"
                       >
-                        <Icon name="trash" size={16} />
-                        Remove
-                      </button>
+                        Import
+                      </Link>
                     </div>
+                  </div>
+                  <details className="account-details">
+                    <summary>Import history</summary>
+                    <ImportHistory accountId={info.account.account_id} onChanged={load} />
                   </details>
                 </>
               )}

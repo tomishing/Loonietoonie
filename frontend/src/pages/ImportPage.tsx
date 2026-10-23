@@ -20,6 +20,8 @@ import { formatDate, formatMoney } from '../lib/format'
 
 // Rows of the file shown before importing.
 const SHOWN_ROWS = 10
+// Longer lists of possible duplicates (e.g. a card Plaid already imported) start collapsed.
+const LOOKALIKES_OPEN = 5
 // Made-up transactions for trying the import without a real statement (public/).
 const SAMPLE_FILE = 'sample-statement.csv'
 
@@ -205,6 +207,7 @@ export function ImportPage() {
   const [accounts, setAccounts] = useState<AccountInfo[] | null>(null)
   const [accountId, setAccountId] = useState(searchParams.get('account') ?? '')
   const [adding, setAdding] = useState(false)
+  const [editingAccount, setEditingAccount] = useState(false)
   const [file, setFile] = useState<StatementFile | null>(null)
   // Bumped for every file chosen (the same file again is read again).
   const [fileVersion, setFileVersion] = useState(0)
@@ -351,7 +354,7 @@ export function ImportPage() {
         <h2 id="import-account-title" className="card-title">
           Account
         </h2>
-        {accounts !== null && accounts.length > 0 && !adding && (
+        {accounts !== null && accounts.length > 0 && !adding && !editingAccount && (
           <label>
             Import into
             <select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
@@ -367,7 +370,26 @@ export function ImportPage() {
             </select>
           </label>
         )}
-        {adding || accounts?.length === 0 ? (
+        {editingAccount && account ? (
+          <AccountForm
+            account={account}
+            defaultCurrency={user?.default_currency ?? 'CAD'}
+            onSaved={(saved) => {
+              setAccounts(
+                (accounts ?? []).map((info) =>
+                  info.account.account_id === saved.account_id ? { ...info, account: saved } : info,
+                ),
+              )
+              setEditingAccount(false)
+            }}
+            onCancel={() => setEditingAccount(false)}
+            onRemoved={(removedId) => {
+              setAccounts((accounts ?? []).filter((info) => info.account.account_id !== removedId))
+              setAccountId('')
+              setEditingAccount(false)
+            }}
+          />
+        ) : adding || accounts?.length === 0 ? (
           <AccountForm
             defaultCurrency={user?.default_currency ?? 'CAD'}
             onSaved={(created) => {
@@ -378,10 +400,22 @@ export function ImportPage() {
             onCancel={() => setAdding(false)}
           />
         ) : (
-          <button type="button" className="button button-ghost button-small" onClick={() => setAdding(true)}>
-            <Icon name="plus" size={16} />
-            Add an account or card
-          </button>
+          <div className="household-form-actions">
+            {account && (
+              <button
+                type="button"
+                className="button button-ghost button-small"
+                onClick={() => setEditingAccount(true)}
+              >
+                <Icon name="pencil" size={16} />
+                Edit this account
+              </button>
+            )}
+            <button type="button" className="button button-ghost button-small" onClick={() => setAdding(true)}>
+              <Icon name="plus" size={16} />
+              Add an account or card
+            </button>
+          </div>
         )}
       </section>
 
@@ -477,8 +511,10 @@ export function ImportPage() {
           )}
 
           {lookalikes.length > 0 && (
-            <fieldset className="import-lookalikes">
-              <legend>Possibly already imported. Tick the ones to import anyway:</legend>
+            <details className="import-lookalikes" open={lookalikes.length <= LOOKALIKES_OPEN}>
+              <summary>
+                {lookalikes.length} possibly already imported: left out unless you tick them
+              </summary>
               {lookalikes.map((row) => (
                 <label key={row.line} className="check-row">
                   <input
@@ -497,7 +533,7 @@ export function ImportPage() {
                   </span>
                 </label>
               ))}
-            </fieldset>
+            </details>
           )}
 
           {skipped.length > 0 && (

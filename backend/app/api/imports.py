@@ -155,6 +155,22 @@ def run_import(
         raise _file_error(exc) from exc
 
 
+class DuplicateCount(BaseModel):
+    count: int
+
+
+@router.get("/imports/plaid-duplicates", response_model=DuplicateCount)
+def count_plaid_duplicates(user: UserDep, repository: RepositoryDep) -> DuplicateCount:
+    """How many imported rows repeat a charge Plaid already imported for the same card."""
+    return DuplicateCount(count=len(service.plaid_duplicates(repository)))
+
+
+@router.post("/imports/plaid-duplicates/remove", response_model=DuplicateCount)
+def remove_plaid_duplicates(user: UserDep, repository: RepositoryDep) -> DuplicateCount:
+    """One-time cleanup: mark those imported rows deleted; the Plaid copies stay."""
+    return DuplicateCount(count=service.remove_plaid_duplicates(repository, user.sub))
+
+
 @router.get("/imports", response_model=list[ImportRecord])
 def list_imports(
     user: UserDep, repository: RepositoryDep, account_id: str | None = None

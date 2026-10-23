@@ -2754,8 +2754,8 @@ button.category-bar {
   font-size: 0.9rem;
 }
 
-.import-lookalikes legend {
-  padding: 0 4px;
+.import-lookalikes summary {
+  cursor: pointer;
 }
 
 .check-row {
@@ -2787,4 +2787,9 @@ button.category-bar {
   display: flex;
   flex: none;
   gap: 6px;
+}
+
+.account-remove {
+  margin-left: auto;
+  color: #a1181d;
 }

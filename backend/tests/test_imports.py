@@ -556,3 +556,108 @@ def test_api_errors(http: TestClient) -> None:
         ).status_code
         == 422
     )
+
+
+def test_charges_plaid_imported_for_the_same_card_are_not_imported_again(
+    repository: SheetsRepository,
+) -> None:
+    plaid_card = BankAccount(
+        account_id="plaid-acc", item_id="item-1", institution="CIBC", name="CIBC Aventura Visa", mask="1234",
+        type="credit", subtype="credit card", currency="CAD",
+    )  # fmt: skip
+    other_card = plaid_card.model_copy(update={"account_id": "plaid-other", "mask": "9999"})
+    repository.save_bank_accounts([plaid_card, other_card])
+
+    def plaid_row(transaction_id: str, account_id: str, day: int, text: str, amount: str) -> BankTransaction:
+        return BankTransaction(
+            transaction_id=transaction_id, account_id=account_id, date=date(2026, 10, day), merchant="",
+            description=text, amount=Decimal(amount), currency="CAD", kind="spending", category="Other",
+            subcategory="", plaid_category="", pending=False,
+        )  # fmt: skip
+
+    repository.apply_bank_changes(
+        [
+            plaid_row(
+                "p1", "plaid-acc", 2, "TIM HORTONS #1234 VANCOUVER BC", "4.50"
+            ),  # purchase date a day off
+            plaid_row(
+                "p2", "plaid-acc", 3, "SAFEWAY #4501 BURNABY BC", "87.12"
+            ),  # one of the two Safeway charges
+            plaid_row(
+                "p3", "plaid-other", 4, "AMAZON.CA*2G9HF48P3 AMAZON.CA ON", "-19.99"
+            ),  # a different card
+        ],
+        [],
+    )
+    account = card(repository)  # CIBC, last 4 digits 1234
+    preview = service.preview_import(repository, account.account_id, CIBC_CARD, None)
+    assert [(r.status, r.reason) for r in preview.rows] == [
+        (
+            "possible_duplicate",
+            "Looks like TIM HORTONS #1234 VANCOUVER BC on 2026-10-02"
+            " in CIBC Aventura Visa •• 1234 (from Plaid)",
+        ),
+        ("new", ""),
+        (
+            "possible_duplicate",
+            "Looks like SAFEWAY #4501 BURNABY BC on 2026-10-03 in CIBC Aventura Visa •• 1234 (from Plaid)",
+        ),
+        ("new", ""),
+        ("new", ""),
+    ]
+    assert do_import(repository, account, CIBC_CARD).added == 3
+
+    # Without last 4 digits, the same bank and account type count as the same card.
+    unlabelled = service.create_account(
+        repository,
+        service.AccountDraft(institution="cibc", name="Visa", type="credit", currency="CAD"),
+    )
+    again = service.preview_import(repository, unlabelled.account_id, CIBC_CARD, None)
+    assert again.counts.new == 0  # every row is in one of the CIBC cards already
+
+
+def test_cleanup_removes_imported_copies_of_plaid_charges(
+    repository: SheetsRepository, http: TestClient
+) -> None:
+    plaid_card = BankAccount(
+        account_id="plaid-acc", item_id="item-1", institution="CIBC", name="CIBC Aventura Visa", mask="1234",
+        type="credit", subtype="credit card", currency="CAD",
+    )  # fmt: skip
+    repository.save_bank_accounts([plaid_card])
+    tim = BankTransaction(
+        transaction_id="p1", account_id="plaid-acc", date=date(2026, 10, 2), merchant="Tim Hortons",
+        description="TIM HORTONS #1234 VANCOUVER BC", amount=Decimal("4.50"), currency="CAD", kind="spending",
+        category="Dining Out", subcategory="", plaid_category="", pending=False, edited=True,
+    )  # fmt: skip
+    safeway = tim.model_copy(
+        update={
+            "transaction_id": "p2",
+            "date": date(2026, 10, 3),
+            "description": "SAFEWAY #4501",
+            "amount": Decimal("87.12"),
+        }
+    )
+    repository.apply_bank_changes([tim, safeway], [])
+    account = card(repository)
+    # Imported before look-alikes were checked across accounts: everything went in.
+    service.run_import(
+        repository, None, USER, account.account_id, "old.csv", CIBC_CARD, None, set(range(1, 6)), NOW
+    )
+    assert len(active(repository)) == 7
+
+    assert http.get("/api/imports/plaid-duplicates").json() == {"count": 2}  # one of the two Safeway rows
+    assert http.post("/api/imports/plaid-duplicates/remove").json() == {"count": 2}
+    left = active(repository)
+    assert len(left) == 5
+    assert {t.transaction_id for t in left} >= {"p1", "p2"}  # Plaid copies and their choices stay
+    assert sum(1 for t in left if "SAFEWAY" in t.description) == 2
+    assert http.get("/api/imports/plaid-duplicates").json() == {"count": 0}
+    # Undoing the import and importing again finds the Plaid copies as possible duplicates instead.
+    [record] = repository.list_imports()
+    service.undo_import(repository, USER, record.import_id)
+    later = "2026-10-24T09:00:00Z"  # after the cross-account check: such imports are left alone
+    again = service.run_import(
+        repository, None, USER, account.account_id, "new.csv", CIBC_CARD, None, set(), later
+    )
+    assert again.added == 3
+    assert http.get("/api/imports/plaid-duplicates").json() == {"count": 0}

@@ -11,6 +11,7 @@ import hashlib
 import logging
 import uuid
 from collections import Counter
+from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
 from typing import Literal
@@ -45,6 +46,9 @@ logger = logging.getLogger(__name__)
 # A row that looks like an existing one (same amount, a shared word) within this many days is a
 # possible duplicate: the bank may show the posting date in one file and the purchase date in another.
 LOOKALIKE_DAYS = 3
+# Imports before this time compared files only with the account's own rows, so a card Plaid had
+# already imported could come in twice; plaid_duplicates cleans those up. Later imports were checked.
+CROSS_ACCOUNT_CHECK_SINCE = "2026-10-23T19:42:00Z"
 
 RowStatus = Literal["new", "duplicate", "possible_duplicate", "skipped"]
 Choice = tuple[BankTransactionKind, str, str]
@@ -195,8 +199,11 @@ def _check(
     parsed = parse_statement(data, account.type, saved=saved, chosen=chosen)
     if parsed.currency and parsed.currency != account.currency:
         raise ImportFileError(f"This file is in {parsed.currency}, but the account is in {account.currency}.")
-    existing = repository.list_bank_transactions(BankTransactionFilter(account_id=account.account_id))
-    checked = _classify(account.account_id, parsed.rows, existing)
+    related = _same_card_accounts(repository, account)
+    transactions = repository.list_bank_transactions(BankTransactionFilter())
+    existing = [t for t in transactions if t.account_id == account.account_id]
+    elsewhere = [t for t in transactions if t.account_id != account.account_id and t.account_id in related]
+    checked = _classify(account.account_id, parsed.rows, existing, elsewhere, related)
     tally = Counter(c.status for c in checked)
     counts = PreviewCounts(
         new=tally["new"],
@@ -249,7 +256,40 @@ def import_key(account_id: str, row: ParsedRow, repeat: int) -> str:
     return f"csv:{digest[:32]}"
 
 
-def _classify(account_id: str, rows: list[ParsedRow], existing: list[BankTransaction]) -> list[_Checked]:
+def _same_card_accounts(repository: Repository, account: BankAccount) -> dict[str, BankAccount]:
+    """Other accounts (linked through Plaid, unlinked, or added again by hand) that are probably the
+    same card or bank account: the same type and last 4 digits, or, when either has no last 4 digits,
+    the same type and bank. Their rows are look-alike candidates, so a card that Plaid imported
+    isn't imported again from a file."""
+    related: dict[str, BankAccount] = {}
+    for other in [*repository.list_bank_accounts(), *repository.list_removed_bank_accounts()]:
+        if other.account_id == account.account_id or other.type != account.type:
+            continue
+        if other.mask and account.mask:
+            same = other.mask == account.mask
+        else:
+            same = bool(name_words(other.institution) & name_words(account.institution))
+        if same:
+            related[other.account_id] = other
+    return related
+
+
+def _account_label(account: BankAccount) -> str:
+    # Plaid names often start with the bank already ("CIBC Aventura Visa").
+    named = account.name.casefold().startswith(account.institution.casefold())
+    name = account.name if named else " ".join(part for part in (account.institution, account.name) if part)
+    return f"{name} •• {account.mask}" if account.mask else name
+
+
+def _classify(
+    account_id: str,
+    rows: list[ParsedRow],
+    existing: list[BankTransaction],
+    elsewhere: list[BankTransaction] | None = None,
+    accounts: dict[str, BankAccount] | None = None,
+) -> list[_Checked]:
+    """Each row's status. `existing` are the account's own rows (duplicate keys and look-alikes);
+    `elsewhere` are rows of the same card in other `accounts` (look-alikes only)."""
     known = {t.import_key for t in existing if t.import_key}
     seen: Counter[tuple[object, ...]] = Counter()
     checked: list[_Checked] = []
@@ -265,26 +305,41 @@ def _classify(account_id: str, rows: list[ParsedRow], existing: list[BankTransac
 
     # Look-alikes: rows imported another way (Plaid) or from a file the bank wrote differently.
     matched_keys = {c.key for c in checked if c.status == "duplicate"}
-    pool = [t for t in existing if not t.import_key or t.import_key not in matched_keys]
+    pool = _LookalikePool(
+        t for t in [*existing, *(elsewhere or [])] if not (t.import_key and t.import_key in matched_keys)
+    )
     for c in checked:
-        if c.status != "new":
+        if c.status != "new" or c.row.date is None or c.row.amount is None:
             continue
-        twin = next((t for t in pool if _looks_alike(c.row, t)), None)
-        if twin is not None:
-            pool.remove(twin)
-            c.status = "possible_duplicate"
-            c.reason = f"Looks like {twin.merchant or twin.description} on {twin.date.isoformat()}"
+        twin = pool.take(c.row.date, c.row.amount, c.row.description)
+        if twin is None:
+            continue
+        c.status = "possible_duplicate"
+        c.reason = f"Looks like {twin.merchant or twin.description} on {twin.date.isoformat()}"
+        other = (accounts or {}).get(twin.account_id)
+        if twin.account_id != account_id and other is not None:
+            c.reason += f" in {_account_label(other)}" + (" (from Plaid)" if not twin.import_id else "")
     return checked
 
 
-def _looks_alike(row: ParsedRow, existing: BankTransaction) -> bool:
-    if row.date is None or row.amount != existing.amount:
-        return False
-    if abs((row.date - existing.date).days) > LOOKALIKE_DAYS:
-        return False
-    return bool(
-        name_words(row.description) & (name_words(existing.description) | name_words(existing.merchant))
-    )
+class _LookalikePool:
+    """Existing rows a new row may repeat: the same amount, a shared description word, and dates at
+    most LOOKALIKE_DAYS apart. Each row is taken once."""
+
+    def __init__(self, transactions: Iterable[BankTransaction]) -> None:
+        self._by_amount: dict[Decimal, list[tuple[BankTransaction, set[str]]]] = {}
+        for t in transactions:
+            words = name_words(t.description) | name_words(t.merchant)
+            self._by_amount.setdefault(t.amount, []).append((t, words))
+
+    def take(self, when: date, amount: Decimal, description: str) -> BankTransaction | None:
+        candidates = self._by_amount.get(amount, [])
+        words = name_words(description)
+        for entry in candidates:
+            if abs((when - entry[0].date).days) <= LOOKALIKE_DAYS and words & entry[1]:
+                candidates.remove(entry)
+                return entry[0]
+        return None
 
 
 def preview_import(
@@ -352,6 +407,46 @@ def undo_import(repository: Repository, user_id: str, import_id: str) -> int:
     if removed is None:
         raise ImportNotFoundError(import_id)
     return removed
+
+
+def plaid_duplicates(repository: Repository) -> list[BankTransaction]:
+    """Rows imported from statement files that repeat a charge Plaid imported for the same card
+    (in a linked or unlinked account), from imports made before look-alikes were checked across
+    accounts (CROSS_ACCOUNT_CHECK_SINCE). Each Plaid charge explains one imported row."""
+    transactions = repository.list_bank_transactions(BankTransactionFilter())
+    # Rows this cleanup already removed still account for their Plaid charge (rows removed by Undo
+    # don't: their import is gone).
+    imports = {r.import_id for r in repository.list_imports() if r.created_at < CROSS_ACCOUNT_CHECK_SINCE}
+    removed = [t for t in repository.list_deleted_bank_transactions() if t.import_id in imports]
+    found: list[BankTransaction] = []
+    for account in repository.list_bank_accounts():
+        if account.linked:
+            continue
+        related = _same_card_accounts(repository, account)
+        plaid = {a for a, other in related.items() if other.item_id}
+        pool = _LookalikePool(t for t in transactions if t.account_id in plaid and not t.import_id)
+        for t in removed:
+            if t.account_id == account.account_id:
+                pool.take(t.date, t.amount, t.description)
+        for t in sorted(transactions, key=lambda t: (t.date, t.transaction_id)):
+            if (
+                t.account_id == account.account_id
+                and t.import_id in imports
+                and pool.take(t.date, t.amount, t.description)
+            ):
+                found.append(t)
+    return found
+
+
+def remove_plaid_duplicates(repository: Repository, user_id: str) -> int:
+    """Soft-delete the rows `plaid_duplicates` finds (the Plaid copies, with their history, receipt
+    matches, and chosen categories, stay). Returns how many were removed."""
+    with user_lock(user_id):
+        duplicates = plaid_duplicates(repository)
+        repository.update_bank_fields({t.transaction_id: {"deleted": "TRUE"} for t in duplicates})
+        if duplicates:
+            refresh_matches(repository)
+    return len(duplicates)
 
 
 # --- names and categories ------------------------------------------------------------------------

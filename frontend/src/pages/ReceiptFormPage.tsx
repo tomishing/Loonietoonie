@@ -21,7 +21,7 @@ import type { ScanReviewState } from './ScanPage'
 import type { TransactionsLocationState } from './TransactionsPage'
 
 const FALLBACK_CURRENCY = 'CAD'
-const COMMON_CURRENCIES = ['CAD', 'USD', 'JPY', 'EUR', 'GBP', 'AUD', 'CNY', 'KRW', 'MXN']
+const COMMON_CURRENCIES = ['CAD', 'USD', 'JPY', 'EUR', 'GBP', 'AUD', 'CNY', 'INR', 'KRW', 'MXN']
 const CURRENCY_NAMES: Record<string, string> = {
   CAD: 'Canadian dollar',
   USD: 'US dollar',
