@@ -6,8 +6,6 @@ succeeds; a failed sync is simply repeated, and transaction IDs prevent duplicat
 """
 
 import logging
-import threading
-from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Literal
 
@@ -16,6 +14,7 @@ from pydantic import BaseModel
 from app.bank.categories import OTHER, map_category
 from app.bank.plaid import BankProvider, PlaidError, PlaidTransaction, SyncPage
 from app.bank.token_store import LinkedItem, TokenStore
+from app.services.locks import user_lock
 from app.services.matching import refresh_matches
 from app.services.names import bank_key, display_name, merchant_key
 from app.services.relink import merge_replaced_accounts
@@ -76,8 +75,6 @@ CATEGORY_MOVES: tuple[tuple[int, str, str, str], ...] = (
 # "Sync" also asks Plaid to read the bank right away, at most this often per bank (Plaid bills
 # /transactions/refresh per request outside the Trial plan).
 REFRESH_INTERVAL = timedelta(hours=1)
-
-_user_locks: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
 
 
 class ItemNotFoundError(Exception):
@@ -206,7 +203,7 @@ def link_item(
     access_token, item_id = provider.exchange_public_token(public_token)
     institution_id, institution_name = provider.get_institution(access_token)
     store.add_item(user_id, item_id, access_token, institution_id, institution_name, now)
-    with _user_locks[user_id]:
+    with user_lock(user_id):
         item = next(i for i in store.list_items(user_id) if i.item_id == item_id)
         result = _sync_item(provider, store, repository, item, categories, default_currency, now)
         replace_old_links(provider, store, repository, user_id, categories, set(result.changes.added_ids))
@@ -300,7 +297,7 @@ def sync_all(
     REFRESH_INTERVAL per bank). Plaid reads it in the background, so the new transactions
     arrive in a later sync, usually within a minute.
     """
-    with _user_locks[user_id]:  # two syncs at once could append the same new rows twice
+    with user_lock(user_id):  # two syncs at once could append the same new rows twice
         results = []
         items = store.list_items(user_id)
         recover_all = any(item.data_version < RECOVER_CHOICES_BELOW for item in items)

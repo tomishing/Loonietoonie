@@ -21,6 +21,7 @@ from app.storage.models import (
     BankTransactionFilter,
     Category,
     ChatRecord,
+    ImportRecord,
     Item,
     ItemDraft,
     MerchantRule,
@@ -281,6 +282,76 @@ class SheetsRepository:
                 if row.values.get("item_id") == item_id
             ]
         )
+
+    def remove_bank_account(self, account_id: str) -> bool:
+        tab = self._read("bank_accounts", fresh=True)
+        row = _find_active(tab, "account_id", account_id)
+        if row is None:
+            return False
+        deleted = {"deleted": TRUE, "updated_at": utc_now_iso()}
+        self._write_rows([("bank_accounts", _with_values(row, tab.headers, deleted))])
+        return True
+
+    def list_imports(self) -> list[ImportRecord]:
+        records: list[ImportRecord] = []
+        for row in _active(self._read("imports")):
+            values = row.values
+            try:
+                records.append(
+                    ImportRecord(
+                        import_id=values["import_id"],
+                        account_id=values.get("account_id", ""),
+                        filename=values.get("filename", ""),
+                        format=values.get("format", ""),
+                        date_from=_optional_date(values.get("date_from", "")),
+                        date_to=_optional_date(values.get("date_to", "")),
+                        added=int(values.get("added", "") or 0),
+                        duplicates=int(values.get("duplicates", "") or 0),
+                        skipped=int(values.get("skipped", "") or 0),
+                        created_at=values.get("created_at", ""),
+                    )
+                )
+            except (KeyError, ValueError):
+                logger.warning("Skipping unreadable import row %d", row.number)
+        return sorted(records, key=lambda r: r.created_at, reverse=True)
+
+    def add_import(self, record: ImportRecord) -> None:
+        tab = self._read("imports", fresh=True)
+        self._append(
+            "imports",
+            tab.headers,
+            [
+                {
+                    "import_id": record.import_id,
+                    "account_id": record.account_id,
+                    "filename": record.filename,
+                    "format": record.format,
+                    "date_from": record.date_from.isoformat() if record.date_from else "",
+                    "date_to": record.date_to.isoformat() if record.date_to else "",
+                    "added": str(record.added),
+                    "duplicates": str(record.duplicates),
+                    "skipped": str(record.skipped),
+                    "created_at": record.created_at,
+                    "updated_at": record.created_at,
+                    "deleted": FALSE,
+                }
+            ],
+        )
+
+    def delete_import(self, import_id: str) -> int | None:
+        imports = self._read("imports", fresh=True)
+        row = _find_active(imports, "import_id", import_id)
+        if row is None:
+            return None
+        transactions = self._read("bank_transactions", fresh=True)
+        deleted = {"deleted": TRUE, "updated_at": utc_now_iso()}
+        writes = [
+            ("bank_transactions", _with_values(t, transactions.headers, deleted))
+            for t in _active(transactions)
+            if t.values.get("import_id") == import_id
+        ]
+        self._write_rows([*writes, ("imports", _with_values(row, imports.headers, deleted))])
+        return len(writes)
 
     def apply_bank_changes(self, upserts: list[BankTransaction], removed_ids: list[str]) -> BankChanges:
         if not upserts and not removed_ids:
@@ -709,6 +780,7 @@ def _account_record(account: BankAccount, now: str) -> Record:
         "type": account.type,
         "subtype": account.subtype,
         "currency": account.currency,
+        "import_format": account.import_format,
         "updated_at": now,
         "deleted": FALSE,
     }
@@ -724,6 +796,7 @@ def _build_account(record: Record) -> BankAccount:
         type=record.get("type", ""),
         subtype=record.get("subtype", ""),
         currency=(record.get("currency", "").strip().upper() or DEFAULT_CURRENCY),
+        import_format=record.get("import_format", "").strip(),
     )
 
 
@@ -743,6 +816,8 @@ def _transaction_record(transaction: BankTransaction, now: str) -> Record:
         "pending": TRUE if transaction.pending else FALSE,
         "receipt_id": transaction.receipt_id,
         "edited": TRUE if transaction.edited else FALSE,
+        "import_id": transaction.import_id,
+        "import_key": transaction.import_key,
         "updated_at": now,
         "deleted": FALSE,
     }
@@ -765,4 +840,10 @@ def _build_transaction(record: Record) -> BankTransaction:
         pending=record.get("pending", "").strip().upper() == TRUE,
         receipt_id=record.get("receipt_id", "").strip(),
         edited=record.get("edited", "").strip().upper() == TRUE,
+        import_id=record.get("import_id", "").strip(),
+        import_key=record.get("import_key", "").strip(),
     )
+
+
+def _optional_date(text: str) -> date | None:
+    return date.fromisoformat(text.strip()) if text.strip() else None

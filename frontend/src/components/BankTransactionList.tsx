@@ -52,7 +52,7 @@ export function BankTransactionList({
   category: string
   accounts: BankAccount[]
   categories: CategoriesState
-  /** Linked banks, for "last read" times. */
+  /** Banks linked through Plaid, for syncing and "last read" times; empty when none. */
   banks: LinkedInstitution[]
   /** Called after the Sync button ran (e.g. to reload the banks' status). */
   onSynced: () => void
@@ -67,7 +67,8 @@ export function BankTransactionList({
   const key = `${month}|${category}`
   const [result, setResult] = useState<{ key: string; state: State } | null>(null)
   const state: State = result?.key === key ? result.state : { status: 'loading' }
-  const [syncing, setSyncing] = useState(!syncedThisSession)
+  const linked = banks.length > 0
+  const [syncing, setSyncing] = useState(!syncedThisSession && linked)
 
   useEffect(() => {
     let active = true
@@ -78,7 +79,7 @@ export function BankTransactionList({
         .catch(
           (error: unknown) => active && setResult({ key, state: { status: 'error', messages: errorMessages(error) } }),
         )
-    if (syncedThisSession) {
+    if (syncedThisSession || !linked) {
       void load()
     } else {
       // Show what's already imported, then refresh after syncing with the banks.
@@ -94,7 +95,7 @@ export function BankTransactionList({
     return () => {
       active = false
     }
-  }, [month, category, key, version]) // a reload after a match change keeps the list on screen
+  }, [month, category, key, version, linked]) // a reload after a match change keeps the list on screen
 
   const accountLabel = (id: string) => {
     const account = accounts.find((a) => a.account_id === id)
@@ -125,15 +126,21 @@ export function BankTransactionList({
     <>
       <div className="bank-sync-bar">
         <span className="muted">{lastRead ? `Last read from the bank: ${lastRead}` : 'Card and bank transactions'}</span>
-        <button
-          type="button"
-          className="chip chip-action"
-          onClick={() => void runSync()}
-          disabled={busy !== null || syncing}
-        >
-          <Icon name="refresh" size={16} />
-          Sync
-        </button>
+        <Link to="/import" className="chip chip-action">
+          <Icon name="download" size={16} />
+          Import
+        </Link>
+        {linked && (
+          <button
+            type="button"
+            className="chip chip-action"
+            onClick={() => void runSync()}
+            disabled={busy !== null || syncing}
+          >
+            <Icon name="refresh" size={16} />
+            Sync
+          </button>
+        )}
       </div>
       {(busy || syncing) && (
         <p className="muted sync-note" role="status">
@@ -180,8 +187,8 @@ export function BankTransactionList({
         <div className="card empty">
           <Icon name="bank" size={40} />
           <p>{month || category ? 'No bank or card transactions match these filters.' : 'No bank or card transactions yet.'}</p>
-          <Link to="/account" className="button button-secondary">
-            Manage linked banks
+          <Link to="/import" className="button button-secondary">
+            Import a statement
           </Link>
         </div>
       ) : (

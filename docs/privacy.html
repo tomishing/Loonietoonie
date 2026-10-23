@@ -14,7 +14,7 @@
         <img class="logo" src="loon-badge.png" alt="" width="56" height="56" />
         <h1>Privacy policy</h1>
       </header>
-      <p class="muted">Effective October 20, 2026</p>
+      <p class="muted">Effective October 22, 2026</p>
 
       <p>
         LoonieToonie is a household expense app. This policy explains what information it uses, where that information
@@ -54,6 +54,15 @@
 
       <h2>Bank and credit card accounts</h2>
       <ul>
+        <li>
+          You can import a statement file you download from your bank's website (CSV, OFX, or QFX). The file is read on the
+          LoonieToonie server and not kept; its transactions are saved in your Google Drive spreadsheet. LoonieToonie never
+          signs in to your bank for this.
+        </li>
+        <li>
+          To suggest categories, the names of merchants the app hasn't seen before (for example "SAFEWAY #4501 BURNABY
+          BC") are sent to <strong>Anthropic</strong> (Claude), without amounts, dates, or account numbers.
+        </li>
         <li>
           If you link an account, you sign in to your bank through <strong>Plaid</strong>. Your bank username and password go
           to Plaid, never to LoonieToonie. See <a href="https://plaid.com/legal/#end-user-privacy-policy">Plaid's End User
@@ -106,7 +115,10 @@
       <h2>Who receives your information</h2>
       <ul>
         <li><strong>Google</strong>, which stores your spreadsheet and photos in your Drive.</li>
-        <li><strong>Anthropic</strong>, which reads receipt text (and occasionally a photo) and answers Ask questions.</li>
+        <li>
+          <strong>Anthropic</strong>, which reads receipt text (and occasionally a photo), suggests categories for merchant
+          names from imported statements, and answers Ask questions.
+        </li>
         <li><strong>Plaid</strong>, which connects to your bank when you link an account.</li>
       </ul>
       <p>

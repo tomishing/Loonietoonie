@@ -7,6 +7,7 @@ from app.storage.models import (
     BankTransactionFilter,
     Category,
     ChatRecord,
+    ImportRecord,
     MerchantRule,
     Receipt,
     ReceiptDraft,
@@ -67,6 +68,21 @@ class Repository(Protocol):
 
     def save_bank_accounts(self, accounts: list[BankAccount]) -> None:
         """Add or update accounts by account_id (a re-linked account is undeleted)."""
+        ...
+
+    def remove_bank_account(self, account_id: str) -> bool:
+        """Soft-delete one account. Returns False if it does not exist."""
+        ...
+
+    def list_imports(self) -> list[ImportRecord]:
+        """Imported statement files that weren't undone, newest first."""
+        ...
+
+    def add_import(self, record: ImportRecord) -> None: ...
+
+    def delete_import(self, import_id: str) -> int | None:
+        """Undo an import: soft-delete it and its transactions. Returns how many transactions were
+        removed, or None if the import does not exist."""
         ...
 
     def list_deleted_bank_transactions(self) -> list[BankTransaction]:

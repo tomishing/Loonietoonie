@@ -36,6 +36,10 @@ Scanning needs `ANTHROPIC_API_KEY` in `.env`. Receipts are read by `claude-haiku
 
 Uses the same `ANTHROPIC_API_KEY`. Answers come from `claude-opus-5-5` (`ANTHROPIC_CHAT_MODEL`), which looks up numbers in your receipts with read-only tools; set `ANTHROPIC_CHAT_MODEL=claude-haiku-5-5` for a much cheaper model. Chats are not stored on the server.
 
+### Bank and card statements
+
+No setup needed. Account → **Accounts & cards** → add an account, then **Import** a statement file downloaded from the bank's website (CSV, or OFX/QFX). New merchants are categorized with the same `ANTHROPIC_API_KEY` (`ANTHROPIC_RECEIPT_MODEL`); without a key they import as Other. To try it without a real statement, use **Try a sample file** on the Import page (`frontend/public/sample-statement.csv`, made-up CIBC-style card transactions).
+
 ### Bank and card linking (Plaid)
 
 Optional; the Account page hides it until it's configured.
@@ -75,7 +79,7 @@ npm run dev
 
 Open http://localhost:5173. In dev, `/api/*` is proxied to the backend on port 8000.
 
-The first sign-in creates a **LoonieToonie** folder in your Google Drive with a **LoonieToonie** spreadsheet inside (tabs: receipts, items, categories, subcategories, bank_accounts, bank_transactions, settings, ocr_labels). The Account page links to it and lists your categories.
+The first sign-in creates a **LoonieToonie** folder in your Google Drive with a **LoonieToonie** spreadsheet inside (tabs: receipts, items, categories, subcategories, bank_accounts, bank_transactions, imports, settings, ocr_labels, and a few more). The Account page links to it and lists your categories.
 
 ## Android app (Capacitor)
 

@@ -202,7 +202,7 @@ export function BankLinks() {
     <section className="card bank-links" aria-labelledby="bank-links-title">
       <div className="card-head">
         <h2 id="bank-links-title" className="card-title">
-          Bank accounts & cards
+          Linked banks (Plaid)
         </h2>
         {status.items.length > 0 && (
           <button type="button" className="chip chip-action" onClick={() => void sync()} disabled={busy !== null}>

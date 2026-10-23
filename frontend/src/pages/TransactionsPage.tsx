@@ -4,9 +4,11 @@ import {
   errorMessages,
   exportCsvUrl,
   getBankStatus,
+  listAccounts,
   listBankTransactions,
   listReceipts,
   shareCsvExport,
+  type BankAccount,
   type BankStatus,
   type Receipt,
 } from '../api/client'
@@ -56,6 +58,8 @@ export function TransactionsPage() {
   // Receipts (scanned or typed in), or transactions imported from linked banks and cards.
   const view = searchParams.get('view') === 'bank' ? 'bank' : 'receipts'
   const [bank, setBank] = useState<BankStatus | null>(null)
+  // All bank and card accounts: filled from statement files, or linked through Plaid.
+  const [accounts, setAccounts] = useState<BankAccount[]>([])
   const [pickingMonth, setPickingMonth] = useState(false)
   const categories = useCategories()
   const location = useLocation()
@@ -85,19 +89,22 @@ export function TransactionsPage() {
     getBankStatus()
       .then((status) => active && setBank(status))
       .catch(() => undefined) // without it, only receipts are shown
+    listAccounts()
+      .then((infos) => active && setAccounts(infos.map((info) => info.account)))
+      .catch(() => undefined)
     return () => {
       active = false
     }
   }, [bankVersion])
-  const hasBanks = bank !== null && bank.enabled && bank.items.length > 0
-  const accounts = bank?.items.flatMap((item) => item.accounts) ?? []
+  const linkedBanks = bank !== null && bank.enabled ? bank.items : []
+  const hasBanks = accounts.length > 0 || linkedBanks.length > 0
 
   // Receipts that a card charge was matched to: receipt_id → the card ("Visa •• 3333").
   const [paidWith, setPaidWith] = useState<Map<string, string>>(new Map())
   useEffect(() => {
-    if (!hasBanks || view !== 'receipts' || bank === null) return
+    if (!hasBanks || view !== 'receipts') return
     let active = true
-    const cards = bank.items.flatMap((item) => item.accounts)
+    const cards = accounts
     // A charge posts up to 5 days after the purchase, so read on past the selected month.
     const range = month ? monthRange(month) : null
     listBankTransactions({ from: range?.from })
@@ -115,7 +122,7 @@ export function TransactionsPage() {
     return () => {
       active = false
     }
-  }, [hasBanks, view, month, bank])
+  }, [hasBanks, view, month, accounts])
 
   useEffect(() => {
     if (view !== 'receipts') return
@@ -264,7 +271,7 @@ export function TransactionsPage() {
           category={category}
           accounts={accounts}
           categories={categories}
-          banks={bank?.items ?? []}
+          banks={linkedBanks}
           onSynced={() => setBankVersion((v) => v + 1)}
         />
       ) : (

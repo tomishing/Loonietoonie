@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.api import auth, bank, categories, chat, export, health, household, receipts, scan, summary
+from app.api import auth, bank, categories, chat, export, health, household, imports, receipts, scan, summary
 from app.bank.token_store import TokenStoreError
 from app.config import get_settings
 from app.storage.repository import StorageError
@@ -35,6 +35,7 @@ def create_app() -> FastAPI:
     app.include_router(scan.router, prefix="/api")
     app.include_router(receipts.router, prefix="/api")
     app.include_router(bank.router, prefix="/api")
+    app.include_router(imports.router, prefix="/api")
 
     @app.exception_handler(TokenStoreError)
     def token_store_error_handler(request: Request, exc: TokenStoreError) -> JSONResponse:

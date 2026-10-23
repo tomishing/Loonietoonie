@@ -45,7 +45,9 @@ TABS: dict[str, tuple[str, ...]] = {
     ),
     "categories": ("name", "icon", "updated_at", "deleted"),
     "subcategories": ("category", "name", "description", "updated_at", "deleted"),
-    # Linked bank and card accounts (no balances, no full numbers: just the last 4 digits).
+    # Bank and card accounts (no balances, no full numbers: just the last 4 digits). item_id is the
+    # Plaid link, empty for accounts filled from statement files; import_format is the CSV column
+    # mapping confirmed at the last import (JSON).
     "bank_accounts": (
         "account_id",
         "item_id",
@@ -55,11 +57,12 @@ TABS: dict[str, tuple[str, ...]] = {
         "type",
         "subtype",
         "currency",
+        "import_format",
         "updated_at",
         "deleted",
     ),
-    # Imported from Plaid. amount > 0 is money spent, < 0 a refund or money in. kind is
-    # spending | income | transfer; only spending counts towards spending patterns.
+    # Imported from Plaid or from statement files. amount > 0 is money spent, < 0 a refund or money
+    # in. kind is spending | income | transfer; only spending counts towards spending patterns.
     "bank_transactions": (
         "transaction_id",
         "account_id",
@@ -77,6 +80,24 @@ TABS: dict[str, tuple[str, ...]] = {
         # TRUE when the user chose kind/category/subcategory; otherwise they follow Plaid's category
         # (and the remembered merchant category) when Plaid updates the charge.
         "edited",
+        # Statement imports: the import the row came from, and its duplicate key (services/imports.py).
+        "import_id",
+        "import_key",
+        "updated_at",
+        "deleted",
+    ),
+    # Statement files imported (phase 11); undoing one soft-deletes it and its transactions.
+    "imports": (
+        "import_id",
+        "account_id",
+        "filename",
+        "format",
+        "date_from",
+        "date_to",
+        "added",
+        "duplicates",
+        "skipped",
+        "created_at",
         "updated_at",
         "deleted",
     ),

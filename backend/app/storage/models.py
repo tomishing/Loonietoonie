@@ -127,6 +127,13 @@ class BankAccount(BaseModel):
     type: str  # depository | credit | loan | investment | other
     subtype: str
     currency: str
+    # The CSV column mapping confirmed at the last statement import (JSON), or "".
+    import_format: str = ""
+
+    @property
+    def linked(self) -> bool:
+        """Kept up to date by Plaid (not filled from statement files)."""
+        return bool(self.item_id)
 
 
 class BankTransaction(BaseModel):
@@ -148,6 +155,9 @@ class BankTransaction(BaseModel):
     receipt_id: str = ""
     # The user chose kind/category/subcategory (not Plaid's mapping or a remembered category).
     edited: bool = False
+    # Statement imports: the import the row came from and its duplicate key ("" for Plaid rows).
+    import_id: str = ""
+    import_key: str = ""
 
 
 class BankTransactionFilter(BaseModel):
@@ -164,6 +174,21 @@ class MerchantRule(BaseModel):
     kind: BankTransactionKind
     category: str
     subcategory: str
+
+
+class ImportRecord(BaseModel):
+    """One imported statement file (imports tab)."""
+
+    import_id: str
+    account_id: str
+    filename: str
+    format: str  # csv | ofx
+    date_from: date | None
+    date_to: date | None
+    added: int
+    duplicates: int
+    skipped: int
+    created_at: str  # ISO 8601 UTC
 
 
 class ChatRecord(BaseModel):

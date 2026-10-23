@@ -5,6 +5,7 @@ import { Avatar } from '../components/Avatar'
 import { BankLinks } from '../components/BankLinks'
 import { CategoryList } from '../components/CategoryList'
 import { HouseholdForm } from '../components/HouseholdForm'
+import { StatementAccounts } from '../components/StatementAccounts'
 import { Icon } from '../components/Icon'
 
 export function AccountPage() {
@@ -51,6 +52,8 @@ export function AccountPage() {
       </ul>
 
       <HouseholdForm />
+
+      <StatementAccounts />
 
       <BankLinks />
 

@@ -215,7 +215,7 @@ class ClaudeReceiptParser:
             raise ReceiptParseError("Claude returned an unexpected answer") from exc
 
 
-def _category_lines(category: Category) -> str:
+def category_lines(category: Category) -> str:
     """ "- Groceries:" then one indented line per subcategory, with its description if it has one."""
     if not category.subcategories:
         return f"- {category.name} (no subcategories)"
@@ -241,7 +241,7 @@ def _user_prompt(
         )
     else:
         source = "Here is the OCR text of the receipt."
-    allowed = "\n".join(_category_lines(category) for category in categories)
+    allowed = "\n".join(category_lines(category) for category in categories)
     return (
         f"Today is {today.isoformat()}. The default currency is {default_currency}.\n"
         f"Allowed categories, each with its subcategories and what they cover:\n{allowed}\n\n"

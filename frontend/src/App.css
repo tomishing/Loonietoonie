@@ -2639,3 +2639,146 @@ button.category-bar {
 .chat .page-title {
   flex-wrap: wrap;
 }
+
+/* Statement import (phase 11) */
+
+.account-form,
+.import-step,
+.mapping-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.import-step .card-title,
+.import-step > p {
+  margin: 0;
+}
+
+.account-form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 12px;
+}
+
+.account-details {
+  margin: 8px 0 0;
+  padding: 0 0 0 52px;
+  font-size: 0.9rem;
+}
+
+.account-details summary {
+  cursor: pointer;
+  color: var(--text);
+}
+
+.account-details .household-form-actions {
+  margin-top: 8px;
+}
+
+.import-history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.import-history li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-button {
+  position: relative;
+  cursor: pointer;
+}
+
+.mapping-summary {
+  margin: 0;
+  padding: 0 0 0 1.2rem;
+  font-size: 0.92rem;
+}
+
+.import-counts {
+  margin: 0;
+}
+
+.import-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.import-rows li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.import-rows li:last-child {
+  border-bottom: none;
+}
+
+.import-row-date {
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.import-row-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-row-amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.import-lookalikes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  font-size: 0.9rem;
+}
+
+.import-lookalikes legend {
+  padding: 0 4px;
+}
+
+.check-row {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.check-row input {
+  width: auto;
+  min-height: 0;
+  margin-top: 3px;
+}
+
+.import-skipped {
+  margin: 6px 0 0;
+  font-size: 0.88rem;
+}
+
+.import-privacy {
+  font-size: 0.82rem;
+}
+
+.bank-sync-bar > .muted {
+  flex: 1 1 auto;
+}

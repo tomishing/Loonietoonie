@@ -483,6 +483,8 @@ export interface BankAccount {
   type: string
   subtype: string
   currency: string
+  /** The CSV column mapping saved at the last statement import (JSON), or "". */
+  import_format?: string
 }
 
 export interface LinkedInstitution {
@@ -668,4 +670,144 @@ export function clearHousehold(): Promise<HouseholdSettings> {
 
 export function getHouseholdComparison(): Promise<HouseholdComparison> {
   return apiGet<HouseholdComparison>('/api/household/comparison')
+}
+
+// --- statement import (phase 11) ------------------------------------------------
+
+export interface ImportRecord {
+  import_id: string
+  account_id: string
+  filename: string
+  format: 'csv' | 'ofx'
+  date_from: string | null
+  date_to: string | null
+  added: number
+  duplicates: number
+  skipped: number
+  created_at: string
+}
+
+export interface AccountInfo {
+  account: BankAccount
+  /** Kept up to date by Plaid: statement files can't be imported into it. */
+  linked: boolean
+  last_import: ImportRecord | null
+}
+
+export interface AccountDraft {
+  institution: string
+  name: string
+  type: 'depository' | 'credit'
+  /** Last 4 digits, or "". */
+  mask: string
+  currency: string
+}
+
+/** Which CSV columns hold what (0-based). Either `amount`, or `debit` and/or `credit`. */
+export interface ColumnMapping {
+  date: number
+  date_order: 'ymd' | 'mdy' | 'dmy'
+  description: number[]
+  amount: number | null
+  debit: number | null
+  credit: number | null
+  /** For a signed amount column: how the file shows purchases. */
+  purchases: 'negative' | 'positive'
+  signature?: string
+}
+
+export interface PreviewRow {
+  line: number
+  date: string | null
+  description: string
+  /** Decimal string: > 0 money spent, < 0 money in; null when unreadable. */
+  amount: string | null
+  status: 'new' | 'duplicate' | 'possible_duplicate' | 'skipped'
+  reason: string
+}
+
+export interface ImportPreview {
+  format: 'csv' | 'ofx'
+  columns: string[]
+  examples: string[]
+  mapping: ColumnMapping | null
+  /** False when columns or the day/month order were guessed: ask the user to check. */
+  mapping_confident: boolean
+  rows: PreviewRow[]
+  counts: { new: number; duplicate: number; possible_duplicate: number; skipped: number }
+  date_from: string | null
+  date_to: string | null
+}
+
+export interface ImportResult {
+  import_id: string
+  added: number
+  duplicates: number
+  skipped: number
+}
+
+/** A statement file as the API takes it: its bytes in base64. */
+export interface StatementFile {
+  filename: string
+  data: string
+}
+
+export async function readStatementFile(file: File): Promise<StatementFile> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  }
+  return { filename: file.name, data: btoa(binary) }
+}
+
+export function listAccounts(): Promise<AccountInfo[]> {
+  return apiGet<AccountInfo[]>('/api/accounts')
+}
+
+export function createAccount(draft: AccountDraft): Promise<BankAccount> {
+  return apiPost<BankAccount>('/api/accounts', draft)
+}
+
+export function updateAccount(accountId: string, draft: AccountDraft): Promise<BankAccount> {
+  return apiPut<BankAccount>(`/api/accounts/${encodeURIComponent(accountId)}`, draft)
+}
+
+/** Remove an account; with removeTransactions its transactions are removed too (marked deleted). */
+export function deleteAccount(accountId: string, removeTransactions = false): Promise<void> {
+  const query = removeTransactions ? '?remove_transactions=true' : ''
+  return apiDelete(`/api/accounts/${encodeURIComponent(accountId)}${query}`)
+}
+
+export function previewImport(
+  accountId: string,
+  file: StatementFile,
+  mapping: ColumnMapping | null = null,
+): Promise<ImportPreview> {
+  return apiPost<ImportPreview>('/api/imports/preview', { account_id: accountId, ...file, mapping })
+}
+
+export function runImport(
+  accountId: string,
+  file: StatementFile,
+  mapping: ColumnMapping | null,
+  includeLines: number[],
+): Promise<ImportResult> {
+  return apiPost<ImportResult>('/api/imports', {
+    account_id: accountId,
+    ...file,
+    mapping,
+    include_lines: includeLines,
+  })
+}
+
+export function listImports(accountId?: string): Promise<ImportRecord[]> {
+  const query = accountId ? `?account_id=${encodeURIComponent(accountId)}` : ''
+  return apiGet<ImportRecord[]>(`/api/imports${query}`)
+}
+
+/** Undo an import: its transactions are marked deleted. */
+export function undoImport(importId: string): Promise<void> {
+  return apiDelete(`/api/imports/${encodeURIComponent(importId)}`)
 }
