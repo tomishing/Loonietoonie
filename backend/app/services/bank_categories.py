@@ -5,7 +5,7 @@ for a charge with "all charges from this merchant", the choice is saved in the m
 tab, applied to the merchant's past charges now, and to new charges at import (services/bank.py).
 """
 
-from app.services.names import merchant_key
+from app.services.names import bank_key, merchant_key
 from app.storage.models import BankTransactionFilter, BankTransactionKind, MerchantRule
 from app.storage.repository import Repository
 
@@ -66,3 +66,15 @@ def set_category(
             MerchantRule(merchant=key, kind=kind, category=category, subcategory=subcategory)
         )
     return len(changed)
+
+
+def find_rule(
+    rules: dict[str, MerchantRule], name: str, base: str, description: str, plaid_merchant: str = ""
+) -> MerchantRule | None:
+    """The remembered category for a charge. Rules are saved under the merchant name shown when the
+    user chose it, and the shown name can change (learned names, better name cleanup), so the
+    charge's own bank text and Plaid's merchant name are tried too."""
+    keys = [merchant_key(name), merchant_key(base), bank_key(description)]
+    if plaid_merchant:
+        keys.append(merchant_key(plaid_merchant))
+    return next((rules[key] for key in keys if key in rules), None)

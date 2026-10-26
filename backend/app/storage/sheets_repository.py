@@ -766,7 +766,8 @@ def _build_receipt(record: Record, item_records: list[Record]) -> Receipt:
 # Columns the user may edit in the sheet (or the app sets itself); a bank update keeps them.
 # Google Sheets holds at most 50,000 characters per cell.
 CHAT_CELL_LIMIT = 45_000
-USER_FIELDS = frozenset({"kind", "category", "subcategory", "receipt_id", "edited", "deleted"})
+# import_key: on a Plaid row, the statement row it replaced (services/imports.py).
+USER_FIELDS = frozenset({"kind", "category", "subcategory", "receipt_id", "edited", "deleted", "import_key"})
 KINDS = ("spending", "income", "transfer")
 
 

@@ -2,12 +2,12 @@ from datetime import date
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
 from app.auth.dependencies import get_current_user
 from app.auth.session import SessionData
-from app.bank.dependencies import get_bank_provider, get_token_store
+from app.bank.dependencies import get_bank_provider, get_token_store, plaid_available, require_plaid_user
 from app.bank.plaid import BankProvider, PlaidError
 from app.bank.token_store import TokenStore
 from app.config import Settings, get_settings
@@ -21,6 +21,8 @@ from app.storage.repository import Repository
 router = APIRouter(prefix="/bank", tags=["bank"])
 
 UserDep = Annotated[SessionData, Depends(get_current_user)]
+# Linking and syncing: web app, allowlisted accounts only (phase 12).
+PlaidUserDep = Annotated[SessionData, Depends(require_plaid_user)]
 RepositoryDep = Annotated[Repository, Depends(get_repository)]
 ProviderDep = Annotated[BankProvider, Depends(get_bank_provider)]
 StoreDep = Annotated[TokenStore, Depends(get_token_store)]
@@ -55,9 +57,12 @@ def _bank_error(exc: PlaidError) -> HTTPException:
 
 
 @router.get("/items", response_model=BankStatus)
-def list_items(user: UserDep, repository: RepositoryDep, settings: SettingsDep) -> BankStatus:
-    """Linked banks and cards with their accounts. `enabled` is false when Plaid isn't configured."""
-    if not settings.bank_linking_enabled:
+def list_items(
+    request: Request, user: UserDep, repository: RepositoryDep, settings: SettingsDep
+) -> BankStatus:
+    """Linked banks and cards with their accounts. `enabled` is false when Plaid isn't configured,
+    in the Android app, and for accounts not on the Plaid allowlist."""
+    if not plaid_available(request, user, settings):
         return BankStatus(enabled=False, items=[])
     store = get_token_store(settings)
     return BankStatus(enabled=True, items=service.list_linked(store, repository, user.sub))
@@ -65,7 +70,7 @@ def list_items(user: UserDep, repository: RepositoryDep, settings: SettingsDep) 
 
 @router.post("/link-token", response_model=LinkToken)
 def create_link_token(
-    user: UserDep, provider: ProviderDep, store: StoreDep, body: LinkTokenRequest | None = None
+    user: PlaidUserDep, provider: ProviderDep, store: StoreDep, body: LinkTokenRequest | None = None
 ) -> LinkToken:
     """A short-lived token that opens Plaid Link in the app: for a new bank, or with `item_id`,
     for signing in again to a linked bank (Reconnect)."""
@@ -81,7 +86,7 @@ def create_link_token(
 @router.post("/items", response_model=service.ItemSyncResult, status_code=status.HTTP_201_CREATED)
 def link_item(
     body: PublicToken,
-    user: UserDep,
+    user: PlaidUserDep,
     repository: RepositoryDep,
     provider: ProviderDep,
     store: StoreDep,
@@ -125,7 +130,7 @@ def unlink_item(
 
 @router.post("/sync", response_model=service.SyncResult)
 def sync(
-    user: UserDep,
+    user: PlaidUserDep,
     repository: RepositoryDep,
     provider: ProviderDep,
     store: StoreDep,

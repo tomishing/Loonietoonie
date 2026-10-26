@@ -6,6 +6,11 @@ from app.auth.session import SESSION_COOKIE, SessionData, unseal
 from app.config import Settings, get_settings
 
 
+def is_app_request(request: Request) -> bool:
+    """The request comes from the Android app (bearer token), not the web app (cookie)."""
+    return _bearer_token(request) is not None
+
+
 def _bearer_token(request: Request) -> str | None:
     scheme, _, token = request.headers.get("authorization", "").partition(" ")
     return token.strip() if scheme.lower() == "bearer" and token.strip() else None

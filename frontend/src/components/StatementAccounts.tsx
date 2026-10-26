@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import {
-  countPlaidDuplicates,
   errorMessages,
   listAccounts,
   listImports,
-  removePlaidDuplicates,
   undoImport,
   type AccountInfo,
   type ImportRecord,
@@ -92,10 +90,6 @@ export function StatementAccounts() {
   // The account being edited, "new" while adding one, or null.
   const [editing, setEditing] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice>(null)
-  // Imported charges that Plaid had already imported for the same card (imports before 2026-10-23).
-  const [duplicates, setDuplicates] = useState(0)
-  const [cleaning, setCleaning] = useState(false)
-
   const load = useCallback(() => {
     listAccounts()
       .then((result) => {
@@ -103,30 +97,7 @@ export function StatementAccounts() {
         setLoadError(null)
       })
       .catch((error: unknown) => setLoadError(errorMessages(error)))
-    countPlaidDuplicates()
-      .then(setDuplicates)
-      .catch(() => setDuplicates(0))
   }, [])
-
-  const cleanUp = async () => {
-    if (
-      !window.confirm(
-        `Remove ${duplicates} imported transaction${duplicates === 1 ? '' : 's'} that Plaid had already imported? The Plaid copies, with their categories and receipt matches, stay.`,
-      )
-    )
-      return
-    setCleaning(true)
-    try {
-      const removed = await removePlaidDuplicates()
-      setNotice({ tone: 'ok', text: `Removed ${removed} duplicate transaction${removed === 1 ? '' : 's'}.` })
-    } catch (error) {
-      setNotice({ tone: 'error', text: errorMessages(error).join(' ') })
-    } finally {
-      setCleaning(false)
-      load()
-    }
-  }
-  useEffect(load, [load])
 
   if (loadError) {
     return (
@@ -157,23 +128,6 @@ export function StatementAccounts() {
         Download a statement from your bank's website (CSV, or OFX/QFX) and import it. LoonieToonie never signs in to your
         bank.
       </p>
-
-      {duplicates > 0 && (
-        <div className="notice notice-warn bank-reconnect" role="status">
-          <p>
-            {duplicates} imported transaction{duplicates === 1 ? ' repeats a charge' : 's repeat charges'} that Plaid had
-            already imported for the same card.
-          </p>
-          <button
-            type="button"
-            className="button button-primary button-small"
-            onClick={() => void cleanUp()}
-            disabled={cleaning}
-          >
-            {cleaning ? 'Removing…' : 'Remove duplicates'}
-          </button>
-        </div>
-      )}
 
       {accounts.length > 0 && (
         <ul className="bank-items">

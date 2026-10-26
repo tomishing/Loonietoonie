@@ -4,9 +4,11 @@ Sample files are shaped like Canadian banks' exports, with made-up rows only.
 """
 
 import base64
+import os
 from collections.abc import Iterator
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -15,6 +17,8 @@ from fastapi.testclient import TestClient
 from app.api.imports import get_categorizer
 from app.auth.dependencies import get_current_user
 from app.auth.session import SessionData
+from app.bank.plaid import SyncPage
+from app.bank.token_store import SqliteTokenStore
 from app.config import get_settings
 from app.imports.categorizer import CategorizeError, MerchantCategory, MerchantToCategorize
 from app.imports.parser import (
@@ -27,13 +31,17 @@ from app.imports.parser import (
 )
 from app.imports.rules import keyword_kind
 from app.main import app
+from app.services import bank as bank_service
 from app.services import imports as service
+from app.services.bank_categories import set_category
+from app.services.imports import merge_plaid_with_imports
 from app.sheets.setup import ensure_spreadsheet
 from app.storage.dependencies import get_repository
 from app.storage.models import BankAccount, BankTransaction, BankTransactionFilter, Category, ReceiptDraft
 from app.storage.sheets_repository import SheetsRepository, TabReadCache
 from tests.fakes import FakeSheetsApi
 from tests.test_auth import make_settings
+from tests.test_bank import FakeProvider, plaid_tx
 
 NOW = "2026-10-22T12:00:00Z"
 USER = "google-sub-1"
@@ -616,48 +624,77 @@ def test_charges_plaid_imported_for_the_same_card_are_not_imported_again(
     assert again.counts.new == 0  # every row is in one of the CIBC cards already
 
 
-def test_cleanup_removes_imported_copies_of_plaid_charges(
-    repository: SheetsRepository, http: TestClient
-) -> None:
+def test_plaid_charges_replace_imported_statement_rows(repository: SheetsRepository) -> None:
+    """A statement imported while Plaid was behind, then Plaid catches up (phase 12)."""
     plaid_card = BankAccount(
         account_id="plaid-acc", item_id="item-1", institution="CIBC", name="CIBC Aventura Visa", mask="1234",
         type="credit", subtype="credit card", currency="CAD",
     )  # fmt: skip
     repository.save_bank_accounts([plaid_card])
-    tim = BankTransaction(
-        transaction_id="p1", account_id="plaid-acc", date=date(2026, 10, 2), merchant="Tim Hortons",
-        description="TIM HORTONS #1234 VANCOUVER BC", amount=Decimal("4.50"), currency="CAD", kind="spending",
-        category="Dining Out", subcategory="", plaid_category="", pending=False, edited=True,
-    )  # fmt: skip
-    safeway = tim.model_copy(
-        update={
-            "transaction_id": "p2",
-            "date": date(2026, 10, 3),
-            "description": "SAFEWAY #4501",
-            "amount": Decimal("87.12"),
-        }
-    )
-    repository.apply_bank_changes([tim, safeway], [])
     account = card(repository)
-    # Imported before look-alikes were checked across accounts: everything went in.
-    service.run_import(
-        repository, None, USER, account.account_id, "old.csv", CIBC_CARD, None, set(range(1, 6)), NOW
+    do_import(repository, account, CIBC_CARD)
+    imported = {t.description: t for t in active(repository)}
+    tim = imported["TIM HORTONS #1234 VANCOUVER BC"]
+    set_category(
+        repository, tim.transaction_id, "spending", "Dining Out", "Coffee & Cafés", apply_to_merchant=False
     )
-    assert len(active(repository)) == 7
+    repository.set_bank_receipt_ids({tim.transaction_id: "receipt-1"})
 
-    assert http.get("/api/imports/plaid-duplicates").json() == {"count": 2}  # one of the two Safeway rows
-    assert http.post("/api/imports/plaid-duplicates/remove").json() == {"count": 2}
-    left = active(repository)
-    assert len(left) == 5
-    assert {t.transaction_id for t in left} >= {"p1", "p2"}  # Plaid copies and their choices stay
-    assert sum(1 for t in left if "SAFEWAY" in t.description) == 2
-    assert http.get("/api/imports/plaid-duplicates").json() == {"count": 0}
-    # Undoing the import and importing again finds the Plaid copies as possible duplicates instead.
-    [record] = repository.list_imports()
-    service.undo_import(repository, USER, record.import_id)
-    later = "2026-10-24T09:00:00Z"  # after the cross-account check: such imports are left alone
-    again = service.run_import(
-        repository, None, USER, account.account_id, "new.csv", CIBC_CARD, None, set(), later
+    def plaid_row(
+        transaction_id: str, day: int, text: str, amount: str, pending: bool = False
+    ) -> BankTransaction:
+        return BankTransaction(
+            transaction_id=transaction_id, account_id="plaid-acc", date=date(2026, 10, day), merchant="",
+            description=text, amount=Decimal(amount), currency="CAD", kind="spending", category="Other",
+            subcategory="", plaid_category="", pending=pending,
+        )  # fmt: skip
+
+    repository.apply_bank_changes(
+        [
+            plaid_row("p1", 2, "TIM HORTONS 1234", "4.50"),
+            plaid_row("p2", 3, "SAFEWAY #4501 BURNABY BC", "87.12"),  # one of the two Safeway charges
+            plaid_row("p3", 4, "AMAZON.CA*2G9HF48P3", "-19.99", pending=True),  # pending: left alone
+            plaid_row("p4", 9, "SHELL C12345", "60.00"),  # not in the statement
+        ],
+        [],
     )
-    assert again.added == 3
-    assert http.get("/api/imports/plaid-duplicates").json() == {"count": 0}
+    assert merge_plaid_with_imports(repository, {"p1", "p2"}) == 2
+    left = {t.transaction_id: t for t in active(repository)}
+    assert {"p1", "p2", "p3", "p4"} <= set(left)
+    assert len(left) == 4 + 3  # payment, the second Safeway, and the Amazon refund stay imported
+    # The user's choice and the receipt match moved to the Plaid copy.
+    assert (left["p1"].category, left["p1"].subcategory, left["p1"].edited) == (
+        "Dining Out",
+        "Coffee & Cafés",
+        True,
+    )
+    assert left["p1"].receipt_id == "receipt-1"
+    assert (left["p2"].category, left["p2"].edited) == ("Other", False)  # nothing chosen: Plaid's own
+    assert tim.transaction_id not in left
+
+    # Only the rows a sync just added are paired; None checks them all (the one-time run).
+    assert merge_plaid_with_imports(repository, {"p4"}) == 0
+    assert merge_plaid_with_imports(repository, None) == 0
+
+
+def test_sync_merges_new_plaid_charges_with_imported_rows(
+    repository: SheetsRepository, tmp_path: Path
+) -> None:
+    store = SqliteTokenStore(tmp_path / "tokens.sqlite3", os.urandom(32))
+    provider = FakeProvider()  # links "acc-1", a "Plaid Credit Card" •• 3333 at First Platypus Bank
+    provider.pages[""] = [SyncPage(next_cursor="c1", has_more=False)]
+    bank_service.link_item(provider, store, repository, USER, "public-token", CATEGORIES, "CAD", NOW)
+    statement = service.create_account(
+        repository,
+        service.AccountDraft(
+            institution="First Platypus Bank", name="Card", type="credit", mask="3333", currency="CAD"
+        ),
+    )
+    do_import(repository, statement, b"2026-10-05,FRESHCO #123,12.50,\n")
+    assert len(active(repository)) == 1
+
+    provider.pages["c1"] = [
+        SyncPage(added=[plaid_tx("t1", "12.50", day=5)], next_cursor="c2", has_more=False)
+    ]
+    bank_service.sync_all(provider, store, repository, USER, CATEGORIES, "CAD", NOW)
+    assert [t.transaction_id for t in active(repository)] == ["t1"]

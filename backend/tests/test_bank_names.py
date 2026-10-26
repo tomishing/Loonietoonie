@@ -10,7 +10,7 @@ from app.auth.session import SessionData
 from app.bank.plaid import PersonalFinanceCategory, PlaidTransaction
 from app.config import get_settings
 from app.main import app
-from app.services import bank
+from app.services import bank, bank_categories
 from app.services.bank_categories import CategoryChoiceError, set_category
 from app.services.names import clean_bank_text, display_name, merchant_key
 from app.sheets.setup import ensure_spreadsheet
@@ -272,10 +272,13 @@ def test_remembered_category_is_found_by_bank_text_or_plaids_name() -> None:
     by_text = {"skechers burnaby": rule}
 
     assert (
-        bank.find_rule(
+        bank_categories.find_rule(
             by_plaid, "Skechers Burnaby, BC", "Skechers Burnaby, BC", "SKECHERS #1 BURNABY", "Skechers USA"
         )
         is rule
     )
-    assert bank.find_rule(by_text, "Sketchers Inc", "Sketchers Inc", "SKECHERS #1 BURNABY, BC") is rule
-    assert bank.find_rule(by_text, "Starbucks", "Starbucks", "STARBUCKS #9") is None
+    assert (
+        bank_categories.find_rule(by_text, "Sketchers Inc", "Sketchers Inc", "SKECHERS #1 BURNABY, BC")
+        is rule
+    )
+    assert bank_categories.find_rule(by_text, "Starbucks", "Starbucks", "STARBUCKS #9") is None

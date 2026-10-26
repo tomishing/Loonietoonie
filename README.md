@@ -42,10 +42,10 @@ No setup needed. Account → **Accounts & cards** → add an account, then **Imp
 
 ### Bank and card linking (Plaid)
 
-Optional; the Account page hides it until it's configured.
+Optional, and on the web app only: the Android app never includes Plaid, and the web app offers it only to the Google accounts in `PLAID_ALLOWED_EMAILS` (the Account page hides it for everyone else).
 
 1. Create an account at [dashboard.plaid.com](https://dashboard.plaid.com) and copy the client ID and the **Sandbox** secret (Developers → Keys).
-2. In `.env`, set `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV=sandbox`, and `TOKEN_ENCRYPTION_KEY`, generated with `python3 -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"`.
+2. In `.env`, set `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV=sandbox`, `PLAID_ALLOWED_EMAILS` (e.g. `["you@example.com"]`), and `TOKEN_ENCRYPTION_KEY`, generated with `python3 -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"`.
 3. Restart the backend (`docker compose up -d backend`).
 
 In Sandbox, link a test bank such as "First Platypus Bank" with username `user_good` and password `pass_good`. Access tokens are stored encrypted in `backend/data/tokens.sqlite3` (git-ignored); back up that folder and the key together. Losing the key means linking every bank again.

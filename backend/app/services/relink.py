@@ -60,7 +60,10 @@ def replacements(
     active: list[BankAccount], removed: list[BankAccount], item_order: dict[str, int]
 ) -> dict[str, str]:
     """{old account_id: new account_id}. `item_order` ranks the linked items, newest first; an
-    account is replaced by the matching account of the newest linked item."""
+    account is replaced by the matching account of the newest linked item. Only Plaid accounts take
+    part: accounts filled from statement files (no item_id) are merged by imports.py instead."""
+    active = [a for a in active if a.item_id]
+    removed = [a for a in removed if a.item_id]
     newest: dict[tuple[str, str, str], BankAccount] = {}
     for account in sorted(active, key=lambda a: item_order.get(a.item_id, len(item_order))):
         key = _account_key(account)
@@ -127,7 +130,7 @@ def merge_replaced_accounts(
     result = MergeResult()
     result.replaced_items = {
         item_id
-        for item_id in {a.item_id for a in active}
+        for item_id in {a.item_id for a in active if a.item_id}
         if all(a.account_id in replaced for a in active if a.item_id == item_id)
     }
     if not replaced:

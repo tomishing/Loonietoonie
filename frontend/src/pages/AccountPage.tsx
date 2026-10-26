@@ -1,12 +1,17 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
-import { BankLinks } from '../components/BankLinks'
 import { CategoryList } from '../components/CategoryList'
 import { HouseholdForm } from '../components/HouseholdForm'
 import { StatementAccounts } from '../components/StatementAccounts'
 import { Icon } from '../components/Icon'
+
+// Linked banks (Plaid) are on the web app only (phase 12); the Android build leaves them out.
+const BankLinks =
+  import.meta.env.MODE !== 'android'
+    ? lazy(() => import('../components/BankLinks').then((m) => ({ default: m.BankLinks })))
+    : null
 
 export function AccountPage() {
   const { user, signOut } = useAuth()
@@ -55,7 +60,11 @@ export function AccountPage() {
 
       <StatementAccounts />
 
-      <BankLinks />
+      {BankLinks && (
+        <Suspense fallback={null}>
+          <BankLinks />
+        </Suspense>
+      )}
 
       <div className="card">
         <CategoryList />

@@ -1,25 +1,24 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import {
   errorMessages,
   listBankTransactions,
-  syncBanks,
   type BankAccount,
   type BankTransaction,
   type LinkedInstitution,
 } from '../api/client'
-import { describeSync, syncWithRefresh, type SyncNotice } from './bankSync'
 import { categoryIcon, type CategoriesState } from '../hooks/useCategories'
 import { formatDecimal, parseDecimal } from '../lib/decimal'
-import { formatDate, formatDateTime, formatMoney, formatMonth, monthRange } from '../lib/format'
+import { formatDate, formatMoney, formatMonth, monthRange } from '../lib/format'
 import { Icon } from './Icon'
 import { BankCategoryEditor } from './BankCategoryEditor'
 import { ReceiptMatch } from './ReceiptMatch'
 
 type State = { status: 'loading' } | { status: 'loaded'; transactions: BankTransaction[] } | { status: 'error'; messages: string[] }
 
-// Banks are synced once per app session when this list first opens; "Sync now" on Account forces it.
-let syncedThisSession = false
+// Plaid sync is on the web app only (phase 12). `import.meta.env.MODE` is a constant at build time,
+// so the Android build (`--mode android`) drops this import and Plaid's code entirely.
+const PlaidSync = import.meta.env.MODE !== 'android' ? lazy(() => import('./PlaidSync')) : null
 
 /** Sum of spending (kind "spending") per currency; transfers and income are left out. */
 function spendingTotals(transactions: BankTransaction[]): string {
@@ -52,24 +51,18 @@ export function BankTransactionList({
   category: string
   accounts: BankAccount[]
   categories: CategoriesState
-  /** Banks linked through Plaid, for syncing and "last read" times; empty when none. */
+  /** Banks linked through Plaid (web app), for syncing and "last read" times; empty when none. */
   banks: LinkedInstitution[]
-  /** Called after the Sync button ran (e.g. to reload the banks' status). */
+  /** Called after a Plaid sync (e.g. to reload the banks' status). */
   onSynced: () => void
 }) {
-  // The Sync button: what it is doing now, and what it found.
-  const [busy, setBusy] = useState<string | null>(null)
-  const [notice, setNotice] = useState<SyncNotice | null>(null)
-  // Bumped after a match changes, to reload the list.
+  // Bumped after a match changes or a sync, to reload the list.
   const [version, setVersion] = useState(0)
   const reload = () => setVersion((v) => v + 1)
   // The result remembers which filters it belongs to; different filters mean "loading".
   const key = `${month}|${category}`
   const [result, setResult] = useState<{ key: string; state: State } | null>(null)
   const state: State = result?.key === key ? result.state : { status: 'loading' }
-  const linked = banks.length > 0
-  const [syncing, setSyncing] = useState(!syncedThisSession && linked)
-
   useEffect(() => {
     let active = true
     const range = month ? monthRange(month) : null
@@ -79,23 +72,11 @@ export function BankTransactionList({
         .catch(
           (error: unknown) => active && setResult({ key, state: { status: 'error', messages: errorMessages(error) } }),
         )
-    if (syncedThisSession || !linked) {
-      void load()
-    } else {
-      // Show what's already imported, then refresh after syncing with the banks.
-      void load()
-        .then(() => syncBanks())
-        .then(() => {
-          syncedThisSession = true
-          return active ? load() : undefined
-        })
-        .catch(() => undefined) // a failed sync still leaves the imported list on screen
-        .finally(() => active && setSyncing(false))
-    }
+    void load()
     return () => {
       active = false
     }
-  }, [month, category, key, version, linked]) // a reload after a match change keeps the list on screen
+  }, [month, category, key, version]) // a reload after a match change keeps the list on screen
 
   const accountLabel = (id: string) => {
     const account = accounts.find((a) => a.account_id === id)
@@ -103,54 +84,25 @@ export function BankTransactionList({
     return account.mask ? `${account.name} •• ${account.mask}` : account.name
   }
 
-  const runSync = async () => {
-    setNotice(null)
-    setBusy('Syncing with your banks…')
-    try {
-      setNotice(describeSync(await syncWithRefresh(setBusy)))
-      reload()
-      onSynced()
-    } catch (error) {
-      setNotice({ tone: 'error', text: errorMessages(error).join(' ') })
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  const lastRead = banks
-    .filter((bank) => bank.bank_updated_at)
-    .map((bank) => `${bank.institution || 'Bank'} ${formatDateTime(bank.bank_updated_at)}`)
-    .join(' · ')
+  // A stable callback, so PlaidSync's first sync runs once.
+  const [afterSync] = useState(() => () => {
+    setVersion((v) => v + 1)
+    onSynced()
+  })
 
   const bar = (
     <>
       <div className="bank-sync-bar">
-        <span className="muted">{lastRead ? `Last read from the bank: ${lastRead}` : 'Card and bank transactions'}</span>
+        <span className="muted">Card and bank transactions</span>
         <Link to="/import" className="chip chip-action">
           <Icon name="download" size={16} />
           Import
         </Link>
-        {linked && (
-          <button
-            type="button"
-            className="chip chip-action"
-            onClick={() => void runSync()}
-            disabled={busy !== null || syncing}
-          >
-            <Icon name="refresh" size={16} />
-            Sync
-          </button>
-        )}
       </div>
-      {(busy || syncing) && (
-        <p className="muted sync-note" role="status">
-          {busy ?? 'Checking your banks for new transactions…'}
-        </p>
-      )}
-      {notice && (
-        <p className={`notice notice-${notice.tone} sync-notice`} role={notice.tone === 'error' ? 'alert' : 'status'}>
-          {notice.text}
-        </p>
+      {PlaidSync && banks.length > 0 && (
+        <Suspense fallback={null}>
+          <PlaidSync banks={banks} onSynced={afterSync} />
+        </Suspense>
       )}
     </>
   )

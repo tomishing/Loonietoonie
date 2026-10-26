@@ -27,7 +27,7 @@ from app.imports.categorizer import (
 )
 from app.imports.parser import ColumnMapping, ImportFileError, ParsedRow, parse_statement
 from app.imports.rules import keyword_kind
-from app.services.bank import find_rule
+from app.services.bank_categories import find_rule
 from app.services.locks import user_lock
 from app.services.matching import refresh_matches
 from app.services.names import bank_key, clean_bank_text, merchant_key, name_words
@@ -46,9 +46,6 @@ logger = logging.getLogger(__name__)
 # A row that looks like an existing one (same amount, a shared word) within this many days is a
 # possible duplicate: the bank may show the posting date in one file and the purchase date in another.
 LOOKALIKE_DAYS = 3
-# Imports before this time compared files only with the account's own rows, so a card Plaid had
-# already imported could come in twice; plaid_duplicates cleans those up. Later imports were checked.
-CROSS_ACCOUNT_CHECK_SINCE = "2026-10-23T19:42:00Z"
 
 RowStatus = Literal["new", "duplicate", "possible_duplicate", "skipped"]
 Choice = tuple[BankTransactionKind, str, str]
@@ -290,7 +287,9 @@ def _classify(
 ) -> list[_Checked]:
     """Each row's status. `existing` are the account's own rows (duplicate keys and look-alikes);
     `elsewhere` are rows of the same card in other `accounts` (look-alikes only)."""
-    known = {t.import_key for t in existing if t.import_key}
+    # Keys of the same card's other accounts count too: a Plaid row that replaced a statement row
+    # carries its key, so importing that statement again finds it already imported.
+    known = {t.import_key for t in [*existing, *(elsewhere or [])] if t.import_key}
     seen: Counter[tuple[object, ...]] = Counter()
     checked: list[_Checked] = []
     for row in rows:
@@ -409,44 +408,44 @@ def undo_import(repository: Repository, user_id: str, import_id: str) -> int:
     return removed
 
 
-def plaid_duplicates(repository: Repository) -> list[BankTransaction]:
-    """Rows imported from statement files that repeat a charge Plaid imported for the same card
-    (in a linked or unlinked account), from imports made before look-alikes were checked across
-    accounts (CROSS_ACCOUNT_CHECK_SINCE). Each Plaid charge explains one imported row."""
+def merge_plaid_with_imports(repository: Repository, plaid_ids: set[str] | None = None) -> int:
+    """After a Plaid sync: a posted Plaid charge that looks like an imported statement row of the
+    same card replaces it (phase 12). The statement row is soft-deleted; the Plaid row takes its
+    kind, category, and subcategory when the user chose them, and its receipt match when the Plaid
+    row has none. Plaid keeps updating its rows, a statement row never changes. Pending charges
+    wait until they post (their amount can still change). Only the Plaid rows in `plaid_ids` (the
+    ones a sync just added) are paired, or all with None. Returns the number of rows merged."""
     transactions = repository.list_bank_transactions(BankTransactionFilter())
-    # Rows this cleanup already removed still account for their Plaid charge (rows removed by Undo
-    # don't: their import is gone).
-    imports = {r.import_id for r in repository.list_imports() if r.created_at < CROSS_ACCOUNT_CHECK_SINCE}
-    removed = [t for t in repository.list_deleted_bank_transactions() if t.import_id in imports]
-    found: list[BankTransaction] = []
-    for account in repository.list_bank_accounts():
-        if account.linked:
+    accounts = [*repository.list_bank_accounts(), *repository.list_removed_bank_accounts()]
+    deleted: set[str] = set()
+    updates: dict[str, dict[str, str]] = {}
+    for account in accounts:
+        if account.item_id:
             continue
-        related = _same_card_accounts(repository, account)
-        plaid = {a for a, other in related.items() if other.item_id}
-        pool = _LookalikePool(t for t in transactions if t.account_id in plaid and not t.import_id)
-        for t in removed:
-            if t.account_id == account.account_id:
-                pool.take(t.date, t.amount, t.description)
-        for t in sorted(transactions, key=lambda t: (t.date, t.transaction_id)):
-            if (
-                t.account_id == account.account_id
-                and t.import_id in imports
-                and pool.take(t.date, t.amount, t.description)
-            ):
-                found.append(t)
-    return found
-
-
-def remove_plaid_duplicates(repository: Repository, user_id: str) -> int:
-    """Soft-delete the rows `plaid_duplicates` finds (the Plaid copies, with their history, receipt
-    matches, and chosen categories, stay). Returns how many were removed."""
-    with user_lock(user_id):
-        duplicates = plaid_duplicates(repository)
-        repository.update_bank_fields({t.transaction_id: {"deleted": "TRUE"} for t in duplicates})
-        if duplicates:
-            refresh_matches(repository)
-    return len(duplicates)
+        plaid_accounts = {a for a, other in _same_card_accounts(repository, account).items() if other.item_id}
+        if not plaid_accounts:
+            continue
+        pool = _LookalikePool(t for t in transactions if t.account_id == account.account_id and t.import_id)
+        for plaid in sorted(transactions, key=lambda t: (t.date, t.transaction_id)):
+            # import_key on a Plaid row: it already replaced a statement row.
+            if plaid.account_id not in plaid_accounts or plaid.import_id or plaid.import_key or plaid.pending:
+                continue
+            if plaid_ids is not None and plaid.transaction_id not in plaid_ids:
+                continue
+            twin = pool.take(plaid.date, plaid.amount, plaid.description or plaid.merchant)
+            if twin is None:
+                continue
+            deleted.add(twin.transaction_id)
+            fields = updates.setdefault(plaid.transaction_id, {"import_key": twin.import_key})
+            if twin.edited and not plaid.edited:
+                fields.update(kind=twin.kind, category=twin.category, subcategory=twin.subcategory)
+                fields["edited"] = "TRUE"
+            if twin.receipt_id and not plaid.receipt_id:
+                fields["receipt_id"] = twin.receipt_id
+    if not deleted:
+        return 0
+    repository.update_bank_fields({**{t: {"deleted": "TRUE"} for t in deleted}, **updates})
+    return len(deleted)
 
 
 # --- names and categories ------------------------------------------------------------------------

@@ -385,7 +385,12 @@ def client(
     store: SqliteTokenStore, repository: SheetsRepository
 ) -> Iterator[tuple[TestClient, FakeProvider]]:
     provider = FakeProvider()
-    settings = make_settings(plaid_client_id="id", plaid_secret="secret", token_encryption_key="k" * 43)
+    settings = make_settings(
+        plaid_client_id="id",
+        plaid_secret="secret",
+        token_encryption_key="k" * 43,
+        plaid_allowed_emails=["T@Example.com"],  # compared case-insensitively
+    )
     user = SessionData(sub=USER, email="t@example.com", refresh_token="r", spreadsheet_id="s")
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_current_user] = lambda: user
@@ -431,10 +436,12 @@ def test_bank_linking_off_without_plaid_keys() -> None:
     app.dependency_overrides[get_settings] = lambda: make_settings()
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_repository] = lambda: None
-    with TestClient(app) as http:
-        assert http.get("/api/bank/items").json() == {"enabled": False, "items": []}
-        assert http.post("/api/bank/link-token").status_code == 503
-    app.dependency_overrides.clear()
+    try:
+        with TestClient(app) as http:
+            assert http.get("/api/bank/items").json() == {"enabled": False, "items": []}
+            assert http.post("/api/bank/link-token").status_code == 403
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_bank_api_requires_sign_in() -> None:
@@ -759,3 +766,31 @@ def test_existing_rows_are_settled_once(store: SqliteTokenStore, repository: She
     assert (by_id["stuck"].category, by_id["stuck"].edited) == ("Dining Out", False)
     assert (by_id["mine"].category, by_id["mine"].edited) == ("Transportation", True)
     assert (by_id["plain"].category, by_id["plain"].edited) == ("Dining Out", False)
+
+
+# --- web only, allowlisted accounts (phase 12) -------------------------------------
+
+
+def test_plaid_is_only_for_allowlisted_accounts_on_the_web(
+    client: tuple[TestClient, FakeProvider], store: SqliteTokenStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    http, provider = client
+    monkeypatch.setattr("app.api.bank.get_token_store", lambda settings: store)
+    assert http.post("/api/bank/items", json={"public_token": "public-token"}).status_code == 201
+
+    # The Android app (bearer-token session) never gets Plaid, even for an allowlisted account.
+    app_headers = {"Authorization": "Bearer sealed-session"}
+    assert http.get("/api/bank/items", headers=app_headers).json() == {"enabled": False, "items": []}
+    for path in ("/api/bank/link-token", "/api/bank/sync", "/api/bank/items"):
+        body = {"public_token": "public-token"} if path == "/api/bank/items" else None
+        refused = http.post(path, json=body, headers=app_headers)
+        assert refused.status_code == 403
+        assert "Import a statement" in refused.json()["detail"]
+
+    # Another Google account on the web: no Plaid either, but it can still unlink (delete its tokens).
+    other = SessionData(sub=USER, email="someone@example.com", refresh_token="r", spreadsheet_id="s")
+    app.dependency_overrides[get_current_user] = lambda: other
+    assert http.get("/api/bank/items").json()["enabled"] is False
+    assert http.post("/api/bank/sync").status_code == 403
+    assert http.delete("/api/bank/items/item-1").status_code == 204
+    assert store.list_items(USER) == []

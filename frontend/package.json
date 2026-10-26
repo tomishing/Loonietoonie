@@ -9,7 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
-    "android:sync": "tsc -b && vite build --mode android && cap sync android",
+    "android:sync": "tsc -b && vite build --mode android && node scripts/check-android-bundle.mjs dist && cap sync android",
     "android:build": "npm run android:sync && cd android && ./gradlew assembleDebug",
     "android:run": "npm run android:sync && ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk} cap run android"
   },

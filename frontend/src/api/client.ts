@@ -811,13 +811,3 @@ export function listImports(accountId?: string): Promise<ImportRecord[]> {
 export function undoImport(importId: string): Promise<void> {
   return apiDelete(`/api/imports/${encodeURIComponent(importId)}`)
 }
-
-/** Imported rows that repeat a charge Plaid already imported for the same card (older imports). */
-export async function countPlaidDuplicates(): Promise<number> {
-  return (await apiGet<{ count: number }>('/api/imports/plaid-duplicates')).count
-}
-
-/** One-time cleanup: mark those imported rows deleted; the Plaid copies stay. */
-export async function removePlaidDuplicates(): Promise<number> {
-  return (await apiPost<{ count: number }>('/api/imports/plaid-duplicates/remove')).count
-}

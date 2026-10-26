@@ -14,6 +14,8 @@ from pydantic import BaseModel
 from app.bank.categories import OTHER, map_category
 from app.bank.plaid import BankProvider, PlaidError, PlaidTransaction, SyncPage
 from app.bank.token_store import LinkedItem, TokenStore
+from app.services.bank_categories import find_rule
+from app.services.imports import merge_plaid_with_imports
 from app.services.locks import user_lock
 from app.services.matching import refresh_matches
 from app.services.names import bank_key, display_name, merchant_key
@@ -57,10 +59,14 @@ ItemStatus = Literal["ok", "needs_relink", "error"]
 #     category when Plaid updates them. Once: existing rows are settled (stuck "Other" back to the
 #     remembered or Plaid's category, other non-default choices marked edited) and the recovery
 #     runs again, copying only real choices.
-DATA_VERSION = 13
+# 14: a posted Plaid charge replaces an imported statement row of the same card that it repeats
+#     (services/imports.merge_plaid_with_imports); once, all rows are checked.
+DATA_VERSION = 14
 # Items synced before this version get the one-time settling of existing rows and recovery of
 # choices (services/relink.py).
 RECOVER_CHOICES_BELOW = 13
+# Items synced before this version get the one-time merge of Plaid charges with imported rows.
+MERGE_IMPORTS_BELOW = 14
 # Versions below this read the history again from the start; newer steps only fix rows in place.
 REIMPORT_BELOW = 8
 # Category mapping changes applied to charges already imported:
@@ -146,18 +152,6 @@ def to_transaction(
     )
 
 
-def find_rule(
-    rules: dict[str, MerchantRule], name: str, base: str, description: str, plaid_merchant: str = ""
-) -> MerchantRule | None:
-    """The remembered category for a charge. Rules are saved under the merchant name shown when the
-    user chose it, and the shown name can change (learned names, better name cleanup), so the
-    charge's own bank text and Plaid's merchant name are tried too."""
-    keys = [merchant_key(name), merchant_key(base), bank_key(description)]
-    if plaid_merchant:
-        keys.append(merchant_key(plaid_merchant))
-    return next((rules[key] for key in keys if key in rules), None)
-
-
 def to_accounts(provider: BankProvider, item: LinkedItem, default_currency: str) -> list[BankAccount]:
     return [
         BankAccount(
@@ -207,6 +201,7 @@ def link_item(
         item = next(i for i in store.list_items(user_id) if i.item_id == item_id)
         result = _sync_item(provider, store, repository, item, categories, default_currency, now)
         replace_old_links(provider, store, repository, user_id, categories, set(result.changes.added_ids))
+        merge_plaid_with_imports(repository, set(result.changes.added_ids))
         refresh_matches(repository)
     return result
 
@@ -301,6 +296,7 @@ def sync_all(
         results = []
         items = store.list_items(user_id)
         recover_all = any(item.data_version < RECOVER_CHOICES_BELOW for item in items)
+        merge_all = any(item.data_version < MERGE_IMPORTS_BELOW for item in items)
         for item in items:
             requested = refresh and _request_refresh(provider, store, item, now)
             result = _sync_item(provider, store, repository, item, categories, default_currency, now)
@@ -309,6 +305,9 @@ def sync_all(
         if recover_all:
             _settle_existing_choices(repository, categories)
         replace_old_links(provider, store, repository, user_id, categories, fresh, recover_all)
+        merged = merge_plaid_with_imports(repository, None if merge_all else fresh)
+        if merged:
+            logger.info("Merged %d imported statement rows into Plaid charges", merged)
         results = [r for r in results if r.item_id in {i.item_id for i in store.list_items(user_id)}]
         refresh_matches(repository)  # new charges may match receipts already saved
         return SyncResult(items=results)

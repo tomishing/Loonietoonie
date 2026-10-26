@@ -62,10 +62,18 @@ class Settings(BaseSettings):
     # financial data. TOKEN_ENCRYPTION_KEY is 32 random bytes, base64url-encoded.
     token_store_path: Path = BACKEND_DIR / "data" / "tokens.sqlite3"
     token_encryption_key: str = ""
+    # Google emails that may link banks through Plaid on the web app (phase 12): the developer's
+    # household. Empty: nobody. The Android app never offers Plaid.
+    plaid_allowed_emails: list[str] = Field(default_factory=list)
 
     @property
     def bank_linking_enabled(self) -> bool:
         return bool(self.plaid_client_id and self.plaid_secret and self.token_encryption_key)
+
+    def plaid_allowed_for(self, email: str) -> bool:
+        """Whether this Google account is on the Plaid allowlist (case-insensitive)."""
+        allowed = {address.strip().casefold() for address in self.plaid_allowed_emails}
+        return self.bank_linking_enabled and email.strip().casefold() in allowed
 
     @property
     def cookie_secure(self) -> bool:

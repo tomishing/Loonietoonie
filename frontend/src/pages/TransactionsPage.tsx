@@ -86,9 +86,12 @@ export function TransactionsPage() {
   const [bankVersion, setBankVersion] = useState(0)
   useEffect(() => {
     let active = true
-    getBankStatus()
-      .then((status) => active && setBank(status))
-      .catch(() => undefined) // without it, only receipts are shown
+    // Plaid is on the web app only (phase 12).
+    if (import.meta.env.MODE !== 'android') {
+      getBankStatus()
+        .then((status) => active && setBank(status))
+        .catch(() => undefined) // without it, only the imported accounts are shown
+    }
     listAccounts()
       .then((infos) => active && setAccounts(infos.map((info) => info.account)))
       .catch(() => undefined)
