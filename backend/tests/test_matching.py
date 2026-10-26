@@ -175,6 +175,43 @@ def test_matched_charge_counts_once_with_the_receipts_items(repository: SheetsRe
     assert all(x.receipt_id.startswith("bank:") for x in spending_records(repository))
 
 
+def test_receipt_counts_at_what_the_card_was_charged(repository: SheetsRepository) -> None:
+    dinner = save(
+        repository,
+        "Sushi Well",
+        "2026-10-30",
+        [("Ramen", "30.00", "Dining Out"), ("GST", "1.50", "Tax & Fees")],
+    )
+    shop = save(repository, "FreshCo", "2026-10-05", [("Milk", "5.49", "Groceries")])
+    repository.apply_bank_changes(
+        [
+            # The tip is on the card only, and the charge posts in the next month.
+            charge("dinner", "36.23", "2026-11-02", "Sushi Well", category="Dining Out"),
+            charge("shop", "5.49", "2026-10-05", "FreshCo"),
+        ],
+        [],
+    )
+    set_match(repository, "dinner", dinner.receipt_id)
+    set_match(repository, "shop", shop.receipt_id)
+
+    october = ReceiptFilter(date_from=date(2026, 10, 1), date_to=date(2026, 10, 31))
+    records = {r.store: r for r in spending_records(repository, october)}
+    assert records["Sushi Well"].total == D("36.23")
+    assert records["Sushi Well"].items[-1].price == D("4.73")
+    assert records["Sushi Well"].items[-1].category == "Dining Out"  # not Tax & Fees
+    assert records["FreshCo"].total == D("5.49")
+    assert len(records["FreshCo"].items) == 1
+
+    summary = summarize(list(records.values()), "2026-10", "CAD", "CAD", date(2026, 10, 31))
+    assert summary.total == D("41.72")
+    assert {c.category: c.total for c in summary.categories}["Dining Out"] == D("34.73")
+    assert [i.name for i in summary.top_items] == ["Ramen", "Milk"]  # the tip isn't an item bought
+
+    # With a category filter, the difference counts only when its category is included.
+    taxes = spending_records(repository, ReceiptFilter(category="Tax & Fees"))
+    assert [(r.store, r.total) for r in taxes] == [("Sushi Well", D("31.50"))]
+
+
 def test_category_filter_applies_to_charges(repository: SheetsRepository) -> None:
     repository.apply_bank_changes(
         [

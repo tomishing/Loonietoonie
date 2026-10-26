@@ -14,6 +14,7 @@ from typing import Any
 import pandas as pd
 from pydantic import BaseModel
 
+from app.services.spending_sources import CHARGE_DIFFERENCE_PREFIX
 from app.sheets.schema import TAX_CATEGORY
 from app.storage.models import BANK_RECEIPT_PREFIX, Receipt
 
@@ -148,10 +149,12 @@ def build_frames(receipts: list[Receipt]) -> Frames:
             }
         )
         itemized = Decimal(0)
-        # Card/bank charges without a receipt have the merchant as their only "item": they count
-        # towards categories and stores, but not towards "bought most often" (key "").
+        # Card/bank charges without a receipt have the merchant as their only "item", and a
+        # receipt's card charges can add a difference item (e.g. a tip): they count towards
+        # categories and stores, but not towards "bought most often" (key "").
         from_bank = receipt.receipt_id.startswith(BANK_RECEIPT_PREFIX)
         for item in receipt.items:
+            not_bought = from_bank or item.item_id.startswith(CHARGE_DIFFERENCE_PREFIX)
             amount = item.quantity * item.price
             itemized += amount
             line_rows.append(
@@ -164,7 +167,7 @@ def build_frames(receipts: list[Receipt]) -> Frames:
                     "category": item.category,
                     "subcategory": item.subcategory,
                     "name": item.name.strip(),
-                    "key": "" if from_bank else item.name.strip().casefold(),
+                    "key": "" if not_bought else item.name.strip().casefold(),
                     "amount": amount,
                 }
             )
