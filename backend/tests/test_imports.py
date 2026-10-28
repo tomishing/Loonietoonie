@@ -677,6 +677,41 @@ def test_plaid_charges_replace_imported_statement_rows(repository: SheetsReposit
     assert merge_plaid_with_imports(repository, None) == 0
 
 
+def test_plaid_charge_replaces_a_statement_row_posted_days_later(repository: SheetsRepository) -> None:
+    """CIBC's file has the posting date: a hotel booked on Oct 9 is in it on Oct 13."""
+    plaid_card = BankAccount(
+        account_id="plaid-acc", item_id="item-1", institution="CIBC", name="CIBC Aventura Visa", mask="1234",
+        type="credit", subtype="credit card", currency="CAD",
+    )  # fmt: skip
+    repository.save_bank_accounts([plaid_card])
+    account = card(repository)
+    do_import(
+        repository,
+        account,
+        b"2026-10-13,BKG*BOOKING.COM HOTEL (888)850-3958,374.68,,4500********1234\n"
+        b"2026-10-14,TIM HORTONS #1234 VANCOUVER BC,4.50,,4500********1234\n"
+        b"2026-10-25,BKG*BOOKING.COM HOTEL (888)850-3958,374.68,,4500********1234\n",
+    )
+    repository.apply_bank_changes(
+        [
+            BankTransaction(
+                transaction_id="p1", account_id="plaid-acc", date=date(2026, 10, 9), merchant="Booking.com",
+                description="BKG*BOOKING.COM HOTEL (888)", amount=Decimal("374.68"), currency="CAD",
+                kind="spending", category="Travel", subcategory="", plaid_category="", pending=False,
+            )
+        ],
+        [],
+    )  # fmt: skip
+
+    assert merge_plaid_with_imports(repository, None) == 1
+    # The Oct 13 row went; the second booking, 16 days later, is another charge.
+    assert [(t.date.day, t.amount, t.import_id == "") for t in active(repository)] == [
+        (9, Decimal("374.68"), True),
+        (14, Decimal("4.50"), False),
+        (25, Decimal("374.68"), False),
+    ]
+
+
 def test_sync_merges_new_plaid_charges_with_imported_rows(
     repository: SheetsRepository, tmp_path: Path
 ) -> None:

@@ -61,12 +61,14 @@ ItemStatus = Literal["ok", "needs_relink", "error"]
 #     runs again, copying only real choices.
 # 14: a posted Plaid charge replaces an imported statement row of the same card that it repeats
 #     (services/imports.merge_plaid_with_imports); once, all rows are checked.
-DATA_VERSION = 14
+# 15: that merge allows up to 7 days between the two (a statement file has the posting date); all
+#     rows are checked once more.
+DATA_VERSION = 15
 # Items synced before this version get the one-time settling of existing rows and recovery of
 # choices (services/relink.py).
 RECOVER_CHOICES_BELOW = 13
 # Items synced before this version get the one-time merge of Plaid charges with imported rows.
-MERGE_IMPORTS_BELOW = 14
+MERGE_IMPORTS_BELOW = 15
 # Versions below this read the history again from the start; newer steps only fix rows in place.
 REIMPORT_BELOW = 8
 # Category mapping changes applied to charges already imported:

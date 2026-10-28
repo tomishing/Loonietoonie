@@ -46,6 +46,10 @@ logger = logging.getLogger(__name__)
 # A row that looks like an existing one (same amount, a shared word) within this many days is a
 # possible duplicate: the bank may show the posting date in one file and the purchase date in another.
 LOOKALIKE_DAYS = 3
+# Between a statement row and a Plaid charge: Plaid dates a charge by the purchase (authorized
+# date), a CIBC statement file by when it posted, up to 6 days later (a hotel booked on Oct 9
+# is in the file on Oct 13).
+PLAID_LOOKALIKE_DAYS = 7
 
 RowStatus = Literal["new", "duplicate", "possible_duplicate", "skipped"]
 Choice = tuple[BankTransactionKind, str, str]
@@ -323,7 +327,8 @@ def _classify(
 
 class _LookalikePool:
     """Existing rows a new row may repeat: the same amount, a shared description word, and dates at
-    most LOOKALIKE_DAYS apart. Each row is taken once."""
+    most LOOKALIKE_DAYS apart (PLAID_LOOKALIKE_DAYS when one of them is a Plaid charge). The
+    closest date wins. Each row is taken once."""
 
     def __init__(self, transactions: Iterable[BankTransaction]) -> None:
         self._by_amount: dict[Decimal, list[tuple[BankTransaction, set[str]]]] = {}
@@ -331,14 +336,23 @@ class _LookalikePool:
             words = name_words(t.description) | name_words(t.merchant)
             self._by_amount.setdefault(t.amount, []).append((t, words))
 
-    def take(self, when: date, amount: Decimal, description: str) -> BankTransaction | None:
+    def take(
+        self, when: date, amount: Decimal, description: str, from_plaid: bool = False
+    ) -> BankTransaction | None:
         candidates = self._by_amount.get(amount, [])
         words = name_words(description)
-        for entry in candidates:
-            if abs((when - entry[0].date).days) <= LOOKALIKE_DAYS and words & entry[1]:
-                candidates.remove(entry)
-                return entry[0]
-        return None
+        matches = [
+            entry
+            for entry in candidates
+            if words & entry[1]
+            and abs((when - entry[0].date).days)
+            <= (PLAID_LOOKALIKE_DAYS if from_plaid or not entry[0].import_id else LOOKALIKE_DAYS)
+        ]
+        if not matches:
+            return None
+        entry = min(matches, key=lambda e: (abs((when - e[0].date).days), e[0].date, e[0].transaction_id))
+        candidates.remove(entry)
+        return entry[0]
 
 
 def preview_import(
@@ -432,7 +446,7 @@ def merge_plaid_with_imports(repository: Repository, plaid_ids: set[str] | None 
                 continue
             if plaid_ids is not None and plaid.transaction_id not in plaid_ids:
                 continue
-            twin = pool.take(plaid.date, plaid.amount, plaid.description or plaid.merchant)
+            twin = pool.take(plaid.date, plaid.amount, plaid.description or plaid.merchant, from_plaid=True)
             if twin is None:
                 continue
             deleted.add(twin.transaction_id)
