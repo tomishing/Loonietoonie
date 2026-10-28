@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -29,6 +30,18 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_receipt_model: str = "claude-haiku-5-5"
     anthropic_chat_model: str = "claude-opus-5-5"
+    # Claude calls each user may make in any 24 hours (0 turns a limit off): receipt scan
+    # requests (an image retry counts too), Ask questions, and statement imports.
+    daily_scan_limit: int = 40
+    daily_ask_limit: int = 20
+    daily_import_limit: int = 20
+
+    def daily_limit(self, feature: Literal["scan", "ask", "import"]) -> int:
+        return {
+            "scan": self.daily_scan_limit,
+            "ask": self.daily_ask_limit,
+            "import": self.daily_import_limit,
+        }[feature]
 
     google_client_id: str = ""
     google_client_secret: str = ""

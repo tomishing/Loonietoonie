@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
 from app.ai.receipt_parser import claude_client
+from app.api.limits import LimiterDep, check_daily_limit
 from app.auth.dependencies import get_current_user
 from app.auth.session import SessionData
 from app.config import Settings, get_settings
@@ -133,10 +134,17 @@ def preview(body: ImportFile, user: UserDep, repository: RepositoryDep) -> servi
 
 @router.post("/imports", response_model=service.ImportResult, status_code=status.HTTP_201_CREATED)
 def run_import(
-    body: ImportRequest, user: UserDep, repository: RepositoryDep, categorizer: CategorizerDep
+    body: ImportRequest,
+    user: UserDep,
+    repository: RepositoryDep,
+    categorizer: CategorizerDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+    limiter: LimiterDep,
 ) -> service.ImportResult:
     """Import a statement file's new transactions into an account."""
     data = _decode(body)
+    if categorizer is not None:  # imports call Claude only to categorize new merchants
+        check_daily_limit(limiter, settings, user.sub, "import")
     try:
         return service.run_import(
             repository,

@@ -24,6 +24,7 @@ from app.api.chat import get_chat_runner
 from app.config import get_settings
 from app.main import app
 from app.services.spending_queries import SpendingQueries
+from app.services.usage import UsageLimiter
 from app.sheets.setup import ensure_spreadsheet
 from app.storage.dependencies import get_repository
 from app.storage.models import Category, Receipt, ReceiptFilter
@@ -317,7 +318,7 @@ def runner() -> FakeRunner:
 
 
 @pytest.fixture
-def client(runner: FakeRunner) -> Iterator[TestClient]:
+def client(runner: FakeRunner, signed_in: UsageLimiter) -> Iterator[TestClient]:
     app.dependency_overrides[get_settings] = lambda: make_settings()
     app.dependency_overrides[get_repository] = lambda: FakeRepository()
     app.dependency_overrides[get_chat_runner] = lambda: runner
@@ -357,7 +358,7 @@ def test_chat_endpoint_validates_messages(client: TestClient, messages: list[dic
     assert client.post("/api/chat", json={"messages": messages}).status_code == 422
 
 
-def test_chat_without_api_key_returns_503() -> None:
+def test_chat_without_api_key_returns_503(signed_in: UsageLimiter) -> None:
     app.dependency_overrides[get_settings] = lambda: make_settings(anthropic_api_key="")
     app.dependency_overrides[get_repository] = lambda: FakeRepository()
     with TestClient(app) as client:
@@ -389,7 +390,7 @@ class FailingRunner:
 
 
 @pytest.fixture
-def saved() -> Iterator[tuple[TestClient, SheetsRepository, list[object]]]:
+def saved(signed_in: UsageLimiter) -> Iterator[tuple[TestClient, SheetsRepository, list[object]]]:
     api = FakeSheetsApi()
     repository = SheetsRepository(
         api, ensure_spreadsheet(api, "2026-10-20T00:00:00Z"), TabReadCache(ttl_seconds=0)
@@ -468,3 +469,16 @@ def test_long_titles_are_shortened(saved: tuple[TestClient, SheetsRepository, li
 
     [conversation] = http.get("/api/chat/conversations").json()
     assert len(conversation["title"]) == 80 and conversation["title"].endswith("…")
+
+
+def test_chat_daily_limit_returns_429_without_calling_claude(client: TestClient, runner: FakeRunner) -> None:
+    app.dependency_overrides[get_settings] = lambda: make_settings(daily_ask_limit=1)
+    question = {"messages": [{"role": "user", "content": "Groceries?"}]}
+    assert client.post("/api/chat", json=question).status_code == 200
+
+    response = client.post("/api/chat", json=question)
+
+    assert response.status_code == 429
+    assert response.json()["detail"].startswith("You've used all 1 Ask questions for today.")
+    assert "retry-after" in response.headers
+    assert len(runner.calls) == 1

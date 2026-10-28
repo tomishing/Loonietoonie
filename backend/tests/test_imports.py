@@ -35,6 +35,7 @@ from app.services import bank as bank_service
 from app.services import imports as service
 from app.services.bank_categories import set_category
 from app.services.imports import merge_plaid_with_imports
+from app.services.usage import UsageLimiter
 from app.sheets.setup import ensure_spreadsheet
 from app.storage.dependencies import get_repository
 from app.storage.models import BankAccount, BankTransaction, BankTransactionFilter, Category, ReceiptDraft
@@ -486,7 +487,7 @@ def test_ofx_currency_must_match_and_linked_accounts_are_refused(repository: She
 
 
 @pytest.fixture
-def http(repository: SheetsRepository) -> Iterator[TestClient]:
+def http(repository: SheetsRepository, signed_in: UsageLimiter) -> Iterator[TestClient]:
     user = SessionData(sub=USER, email="t@example.com", refresh_token="r", spreadsheet_id="s")
     app.dependency_overrides[get_settings] = lambda: make_settings()
     app.dependency_overrides[get_current_user] = lambda: user
@@ -733,3 +734,22 @@ def test_sync_merges_new_plaid_charges_with_imported_rows(
     ]
     bank_service.sync_all(provider, store, repository, USER, CATEGORIES, "CAD", NOW)
     assert [t.transaction_id for t in active(repository)] == ["t1"]
+
+
+def test_import_daily_limit(http: TestClient) -> None:
+    app.dependency_overrides[get_settings] = lambda: make_settings(daily_import_limit=1)
+    account_id = http.post(
+        "/api/accounts", json={"institution": "CIBC", "name": "Visa", "type": "credit", "currency": "CAD"}
+    ).json()["account_id"]
+    body = file_body(account_id, CIBC_CARD)
+    for _ in range(3):  # previews don't call Claude, so they aren't counted
+        assert http.post("/api/imports/preview", json=body).status_code == 200
+    assert http.post("/api/imports", json=body).status_code == 201
+
+    refused = http.post("/api/imports", json=body)
+    assert refused.status_code == 429
+    assert refused.json()["detail"].startswith("You've used all 1 statement imports for today.")
+
+    # Without an API key nothing is categorized by Claude, so nothing is limited.
+    app.dependency_overrides[get_categorizer] = lambda: None
+    assert http.post("/api/imports", json=body).status_code == 201

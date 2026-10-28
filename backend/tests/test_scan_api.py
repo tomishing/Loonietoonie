@@ -10,6 +10,7 @@ from app.ai.receipt_parser import ParsedItem, ParsedReceipt, ReceiptImage, Recei
 from app.api.scan import get_receipt_parser
 from app.config import get_settings
 from app.main import app
+from app.services.usage import UsageLimiter
 from app.sheets.schema import FOLDER_MARKER
 from app.sheets.setup import ensure_spreadsheet
 from app.storage.dependencies import get_repository
@@ -66,7 +67,7 @@ def parser() -> FakeParser:
 
 
 @pytest.fixture
-def client(repository: SheetsRepository, parser: FakeParser) -> Iterator[TestClient]:
+def client(repository: SheetsRepository, parser: FakeParser, signed_in: UsageLimiter) -> Iterator[TestClient]:
     app.dependency_overrides[get_settings] = lambda: make_settings()
     app.dependency_overrides[get_repository] = lambda: repository
     app.dependency_overrides[get_receipt_parser] = lambda: parser
@@ -243,3 +244,29 @@ def test_upload_image_for_missing_receipt_returns_404(client: TestClient) -> Non
     response = client.put("/api/receipts/missing/image", content=b"x", headers={"Content-Type": "image/jpeg"})
 
     assert response.status_code == 404
+
+
+def test_scan_daily_limit_returns_429_without_calling_claude(client: TestClient, parser: FakeParser) -> None:
+    app.dependency_overrides[get_settings] = lambda: make_settings(daily_scan_limit=2)
+    for _ in range(2):
+        assert client.post("/api/receipts/scan", json={"ocr_text": "FRESHCO ..."}).status_code == 200
+
+    response = client.post("/api/receipts/scan", json={"ocr_text": "FRESHCO ..."})
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == (
+        "You've used all 2 receipt scans for today. You can try again in about 24 hours. "
+        "You can still enter receipts by hand."
+    )
+    assert int(response.headers["retry-after"]) > 23 * 60 * 60
+    assert len(parser.images) == 2
+
+
+def test_scan_rejected_request_does_not_use_the_limit(client: TestClient, parser: FakeParser) -> None:
+    app.dependency_overrides[get_settings] = lambda: make_settings(daily_scan_limit=1)
+    bad = client.post(
+        "/api/receipts/scan", json={"ocr_text": "x", "image": "not base64!", "image_media_type": "image/jpeg"}
+    )
+    assert bad.status_code == 422
+
+    assert client.post("/api/receipts/scan", json={"ocr_text": "FRESHCO ..."}).status_code == 200

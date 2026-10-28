@@ -10,6 +10,9 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.ai.chat import ChatEvent, ChatMessage, ChatRunner, ClaudeChatRunner
 from app.ai.receipt_parser import claude_client
+from app.api.limits import LimiterDep, check_daily_limit
+from app.auth.dependencies import get_current_user
+from app.auth.session import SessionData
 from app.config import Settings, get_settings
 from app.services.spending_queries import SpendingQueries
 from app.services.spending_sources import spending_records
@@ -54,10 +57,13 @@ def chat(
     repository: Annotated[Repository, Depends(get_repository)],
     runner: Annotated[ChatRunner, Depends(get_chat_runner)],
     settings: Annotated[Settings, Depends(get_settings)],
+    user: Annotated[SessionData, Depends(get_current_user)],
+    limiter: LimiterDep,
 ) -> StreamingResponse:
     """Stream an answer as newline-delimited JSON events: conversation (its ID, first), text,
     status, reset, error, done. A completed answer is saved with its question in the user's
     spreadsheet (chat_messages); a failed one isn't."""
+    check_daily_limit(limiter, settings, user.sub, "ask")
     # Loaded before streaming starts, so storage errors become normal HTTP errors.
     queries = SpendingQueries(spending_records(repository), settings.default_currency, date.today())
     # "Groceries: Fresh Fruit & Vegetables; Bakery; …" so the model knows the exact names to filter by.

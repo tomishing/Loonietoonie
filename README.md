@@ -34,7 +34,7 @@ Scanning needs `ANTHROPIC_API_KEY` in `.env`. Receipts are read by `claude-haiku
 
 ### Ask (spending chatbot)
 
-Uses the same `ANTHROPIC_API_KEY`. Answers come from `claude-opus-5-5` (`ANTHROPIC_CHAT_MODEL`), which looks up numbers in your receipts with read-only tools; set `ANTHROPIC_CHAT_MODEL=claude-haiku-5-5` for a much cheaper model. Chats are not stored on the server.
+Uses the same `ANTHROPIC_API_KEY`. Answers come from `claude-opus-5-5` (`ANTHROPIC_CHAT_MODEL`), which looks up numbers in your receipts with read-only tools; set `ANTHROPIC_CHAT_MODEL=claude-haiku-5-5` for a much cheaper model. Each user may ask 20 questions, scan 40 times, and run 20 statement imports in any 24 hours (`DAILY_ASK_LIMIT`, `DAILY_SCAN_LIMIT`, `DAILY_IMPORT_LIMIT`; 0 = no limit). Chats are not stored on the server.
 
 ### Bank and card statements
 

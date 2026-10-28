@@ -15,6 +15,9 @@ from app.ai.receipt_parser import (
     ReceiptParser,
     claude_client,
 )
+from app.api.limits import LimiterDep, check_daily_limit
+from app.auth.dependencies import get_current_user
+from app.auth.session import SessionData
 from app.config import Settings, get_settings
 from app.services.scan import ScanResult, scan_receipt
 from app.storage.dependencies import get_repository
@@ -87,9 +90,12 @@ def scan(
     repository: Annotated[Repository, Depends(get_repository)],
     parser: Annotated[ReceiptParser, Depends(get_receipt_parser)],
     settings: Annotated[Settings, Depends(get_settings)],
+    user: Annotated[SessionData, Depends(get_current_user)],
+    limiter: LimiterDep,
 ) -> ScanResult:
     """Read a receipt into a draft for the review screen. Nothing is saved."""
     images = _decode_images(body)
+    check_daily_limit(limiter, settings, user.sub, "scan")
     try:
         return scan_receipt(
             parser, repository, body.ocr_text, images, settings.default_currency, date.today()
