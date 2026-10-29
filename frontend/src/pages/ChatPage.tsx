@@ -17,7 +17,7 @@ const MAX_SENT = 40
 const SUGGESTIONS = [
   'What did I spend the most on this month?',
   'How does this month compare with my usual month?',
-  'Where do I buy groceries most often?',
+  'Where could I cut back to save $500 a month?',
 ]
 
 interface Turn extends ChatTurn {

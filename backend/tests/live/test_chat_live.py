@@ -25,6 +25,7 @@ pytestmark = pytest.mark.skipif(
         ("How much did I spend on groceries in September 2026?", "14.98"),  # 5.49 + 4.00 + 5.49
         ("2026年9月の外食はいくらでしたか？", "18"),  # Dining Out: Ramen 18
         ("Which day of the week do I spend the most on?", "Saturday"),
+        ("How could I save CA$60 over the next 3 months?", "20"),  # CA$20 a month
     ],
 )
 def test_chat_answers_from_data(question: str, expected: str) -> None:
