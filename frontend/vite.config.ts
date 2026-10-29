@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => {
         injectRegister: false,
         includeAssets: ['favicon.png', 'apple-touch-icon.png', 'loon-badge.png'],
         manifest: {
-          name: 'LoonieToonie',
+          name: 'LoonieToonie Tracker',
           short_name: 'LoonieToonie',
           description: 'Scan your receipts and see where your money goes.',
           theme_color: '#f7f4f6',

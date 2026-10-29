@@ -6,6 +6,8 @@ This is the product and technical specification for **LoonieToonie**. `CLAUDE.md
 
 LoonieToonie is a household expense app. Users scan receipts and see **where their money goes**: their actual spending, by category and over time, and the patterns in it.
 
+**Name (decided 2026-10-29):** the full name is **LoonieToonie Tracker**, used for the Play listing, the browser title and the PWA `name`, the login screen, the GitHub Pages site, and the Google consent screen. **LoonieToonie** stays the short name: the Android launcher label, the PWA `short_name`, the app header, and running text. The app ID `com.loonietoonie.app` (also the sign-in redirect scheme) and the Drive folder and spreadsheet name `LoonieToonie` stay unchanged, so existing users keep their data.
+
 The goal is understanding real spending, not saving: receipts and bank and card transactions (imported from statement files the user downloads from their bank, phase 11; for invited households also synced through Plaid on the web app, phase 12) show where the money goes. Budgets, saved amount, and saving suggestions are **out of scope** (a planned savings phase was dropped).
 
 ### Current priorities

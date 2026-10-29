@@ -40,7 +40,7 @@ export function LoginPage() {
       <div className="login-content">
         <div className="login-brand">
           <img className="login-mascot" src="/loon-badge.png" alt="" width={88} height={88} />
-          <p className="login-wordmark">LoonieToonie</p>
+          <p className="login-wordmark">LoonieToonie Tracker</p>
         </div>
         <h1 className="login-title">See where your money really goes.</h1>
 
