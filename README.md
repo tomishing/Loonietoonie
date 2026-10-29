@@ -69,6 +69,30 @@ python3 -m venv .venv
 
 API: http://localhost:8000/api/health · docs: http://localhost:8000/docs
 
+### Docker image versions
+
+The image installs `backend/requirements.lock` (exact versions), not the ranges in `requirements.txt`, so rebuilding never pulls in a new major release. To update a package: upgrade it in `.venv`, run the backend checks, then regenerate the lock in the image's base:
+
+```bash
+cd backend
+.venv/bin/pip list --format=freeze | grep -i -E '^(fastapi|uvicorn|pydantic|pydantic-settings|google-auth|requests|cryptography|gspread|anthropic|pandas)==' \
+  | sed 's/^uvicorn==/uvicorn[standard]==/' > /tmp/pins.txt
+docker run --rm -v /tmp:/w python:3.12-slim sh -c 'pip install -q -r /w/pins.txt && pip freeze' > /tmp/lock.txt
+```
+
+Then replace the package lines in `requirements.lock` with `/tmp/lock.txt` (keep the header comment).
+
+### Production (Fly.io)
+
+The API runs at https://api.loonietoonietracker.com and the web app at https://app.loonietoonietracker.com (Toronto region). Non-secret settings are in `backend/fly.toml` and `frontend/fly.toml`; secrets live only in Fly secrets (`flyctl secrets import`). Deploy with:
+
+```bash
+cd backend && ~/.fly/bin/flyctl deploy --ha=false    # one instance: limits, locks and caches are in memory
+cd frontend && ~/.fly/bin/flyctl deploy --ha=false
+```
+
+Production holds the real Plaid tokens on its volume. Keep the laptop backend on Plaid Sandbox, with its own `TOKEN_ENCRYPTION_KEY`.
+
 ## Run the frontend
 
 ```bash
@@ -84,6 +108,8 @@ The first sign-in creates a **LoonieToonie** folder in your Google Drive with a 
 ## Android app (Capacitor)
 
 Needs Android Studio (Android SDK in `~/Android/Sdk`) and an Android phone with **USB debugging** on.
+
+To use the production backend, put `VITE_API_BASE_URL=https://api.loonietoonietracker.com` in `frontend/.env.android.local` (git-ignored), build and install. You don't need the laptop backend. The steps below are for testing against the laptop backend.
 
 ```bash
 # 1. Backend running on this computer (docker compose up, or uvicorn), as above.

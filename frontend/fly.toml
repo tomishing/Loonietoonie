@@ -1,0 +1,23 @@
+# Production web app on Fly.io (Toronto): static files from nginx, no secrets.
+# Deploy from frontend/: ~/.fly/bin/flyctl deploy --ha=false
+
+app = "loonietoonie-tracker-web"
+primary_region = "yyz"
+
+[build]
+  dockerfile = "Dockerfile"
+
+  [build.args]
+    VITE_API_BASE_URL = "https://api.loonietoonietracker.com"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Static files only: the machine may sleep when idle and wakes on the next visit.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
