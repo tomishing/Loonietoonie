@@ -17,7 +17,9 @@ from app.auth.session import (
     seal,
     unseal,
 )
-from tests.test_auth import SECRET, SPREADSHEET_ID, USER, tokens
+from app.config import get_settings
+from app.main import app
+from tests.test_auth import SECRET, SPREADSHEET_ID, USER, make_settings, tokens
 
 pytestmark = pytest.mark.usefixtures("fake_storage")
 
@@ -75,6 +77,16 @@ def test_app_callback_returns_to_the_app_without_a_cookie(
     assert handoff is not None
     assert handoff.challenge == CHALLENGE
     assert handoff.session.spreadsheet_id == SPREADSHEET_ID
+
+
+def test_app_callback_returns_not_invited_to_the_app(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app.dependency_overrides[get_settings] = lambda: make_settings(allowed_emails=["bob@example.com"])
+
+    response = app_sign_in(client, monkeypatch)
+
+    assert deep_link_params(response) == {"error": "not_invited"}
 
 
 def test_token_exchange_and_bearer_access(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

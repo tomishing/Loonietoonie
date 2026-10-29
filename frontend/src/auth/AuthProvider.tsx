@@ -9,6 +9,8 @@ const SIGN_IN_ERRORS: Record<string, string> = {
   drive_permission_required:
     'LoonieToonie needs permission to create its own files in your Google Drive. Please sign in again and allow it.',
   invalid_state: 'Sign-in took too long or was interrupted. Please try again.',
+  not_invited:
+    "LoonieToonie Tracker is invite-only for now, and this Google account isn't on the list. Sign in with the account you were invited with, or ask for an invitation.",
   google_error: 'Google sign-in failed. Please try again.',
   storage_error: "Signed in, but we couldn't set up your LoonieToonie spreadsheet in Google Drive. Please try again.",
 }

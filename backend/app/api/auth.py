@@ -162,6 +162,10 @@ def callback(
         logger.warning("Google Sign-In failed", exc_info=True)
         return fail("google_error")
 
+    # Invite-only: stop before any spreadsheet is created for someone who isn't on the list.
+    if not settings.sign_in_allowed_for(user.email):
+        logger.info("Sign-in refused: %s is not on ALLOWED_EMAILS", user.sub)
+        return fail("not_invited")
     # Google lets users untick individual permissions on the consent screen.
     if google.DRIVE_FILE_SCOPE not in tokens.granted_scopes:
         return fail("drive_permission_required")

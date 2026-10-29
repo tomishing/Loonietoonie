@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="LoonieToonie API", version=__version__)
+    if settings.app_env != "development" and not settings.allowed_emails:
+        logger.warning("ALLOWED_EMAILS is empty: anyone with a Google account can sign in.")
 
     app.add_middleware(
         CORSMiddleware,

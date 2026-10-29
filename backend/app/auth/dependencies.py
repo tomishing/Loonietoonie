@@ -20,7 +20,8 @@ def get_current_user(request: Request, settings: Annotated[Settings, Depends(get
     """Return the signed-in user, or respond 401.
 
     The web app sends the session cookie; the Android app sends the same sealed session
-    as a bearer token (its WebView can't use the backend's cookies).
+    as a bearer token (its WebView can't use the backend's cookies). A session whose email
+    was removed from ALLOWED_EMAILS also gets 401, so the app goes back to sign-in.
     """
     session = unseal(
         _bearer_token(request) or request.cookies.get(SESSION_COOKIE),
@@ -28,6 +29,6 @@ def get_current_user(request: Request, settings: Annotated[Settings, Depends(get
         settings.session_secret,
         settings.session_max_age_days * 24 * 60 * 60,
     )
-    if session is None:
+    if session is None or not settings.sign_in_allowed_for(session.email):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not signed in")
     return session

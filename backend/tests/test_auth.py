@@ -150,6 +150,46 @@ def test_me_returns_user_without_tokens(client: TestClient, monkeypatch: pytest.
     }
 
 
+def test_callback_lets_invited_email_sign_in(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    app.dependency_overrides[get_settings] = lambda: make_settings(allowed_emails=["ANN@example.com"])
+
+    response = sign_in(client, monkeypatch)
+
+    assert response.headers["location"] == f"{FRONTEND_URL}/"
+    assert SESSION_COOKIE in response.cookies
+
+
+def test_callback_refuses_uninvited_email_before_storage_setup(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, fake_storage: list[Credentials]
+) -> None:
+    app.dependency_overrides[get_settings] = lambda: make_settings(allowed_emails=["bob@example.com"])
+
+    response = sign_in(client, monkeypatch)
+
+    assert response.headers["location"] == f"{FRONTEND_URL}/?auth_error=not_invited"
+    assert SESSION_COOKIE not in response.cookies
+    assert fake_storage == []
+
+
+def test_plaid_allowlist_may_sign_in_when_invite_only(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app.dependency_overrides[get_settings] = lambda: make_settings(
+        allowed_emails=["bob@example.com"], plaid_allowed_emails=["ann@example.com"]
+    )
+
+    assert SESSION_COOKIE in sign_in(client, monkeypatch).cookies
+
+
+def test_session_ends_when_email_is_removed_from_the_list(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sign_in(client, monkeypatch)
+    app.dependency_overrides[get_settings] = lambda: make_settings(allowed_emails=["bob@example.com"])
+
+    assert client.get("/api/auth/me").status_code == 401
+
+
 def test_callback_prepares_storage_with_access_token_from_sign_in(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, fake_storage: list[Credentials]
 ) -> None:

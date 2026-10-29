@@ -79,6 +79,17 @@ class Settings(BaseSettings):
     # household. Empty: nobody. The Android app never offers Plaid.
     plaid_allowed_emails: list[str] = Field(default_factory=list)
 
+    # Google emails that may sign in (invite-only launch). Empty: anyone with a Google account.
+    # The Plaid allowlist is always included.
+    allowed_emails: list[str] = Field(default_factory=list)
+
+    def sign_in_allowed_for(self, email: str) -> bool:
+        """Whether this Google account may use the app (case-insensitive)."""
+        if not self.allowed_emails:
+            return True
+        allowed = {address.strip().casefold() for address in self.allowed_emails + self.plaid_allowed_emails}
+        return email.strip().casefold() in allowed
+
     @property
     def bank_linking_enabled(self) -> bool:
         return bool(self.plaid_client_id and self.plaid_secret and self.token_encryption_key)
