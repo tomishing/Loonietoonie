@@ -125,6 +125,15 @@ npm run android:run        # or: npm run android:build, then open frontend/andro
 - OCR runs on the phone with Google ML Kit (English, French, Japanese).
 - To inspect the app's WebView, use desktop Chrome → `chrome://inspect` (debug builds).
 
+### Release build (Google Play)
+
+```bash
+cd frontend
+npm run android:release    # → android/app/build/outputs/bundle/release/app-release.aab
+```
+
+This needs `frontend/android/keystore.properties` (git-ignored; copy `keystore.properties.example`), which points at the upload keystore kept outside the repository. The build always uses the production backend and turns off WebView debugging. It fails if the bundle contains Plaid code or a development backend URL. Raise `versionCode` and `versionName` in `android/app/build.gradle` for every upload.
+
 ### Without the USB cable (Tailscale)
 
 The phone can reach the backend on this computer over your private Tailscale network, on Wi-Fi or mobile data. The computer must be on; nothing is exposed to the public internet.

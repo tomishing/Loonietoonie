@@ -1,5 +1,13 @@
 apply plugin: 'com.android.application'
 
+// Release signing: the upload keystore lives outside the repository; frontend/android/keystore.properties
+// (git-ignored, see keystore.properties.example) says where it is and holds its passwords.
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
 android {
     namespace = "com.loonietoonie.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +24,32 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+// Never produce an unsigned release: Play rejects it, and it hides a missing keystore.properties.
+tasks.matching { it.name in ['bundleRelease', 'assembleRelease'] }.configureEach {
+    doFirst {
+        if (!keystorePropertiesFile.exists()) {
+            throw new GradleException('Release builds need frontend/android/keystore.properties (see keystore.properties.example).')
         }
     }
 }
