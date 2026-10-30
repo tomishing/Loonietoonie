@@ -11,3 +11,8 @@ def test_health() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "version": __version__}
+
+
+def test_health_head() -> None:
+    response = client.head("/api/health")
+    assert response.status_code == 200

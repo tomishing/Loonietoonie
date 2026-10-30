@@ -11,6 +11,7 @@ class HealthResponse(BaseModel):
     version: str
 
 
-@router.get("/health", response_model=HealthResponse)
+# HEAD too: uptime monitors check with HEAD requests.
+@router.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(status="ok", version=__version__)
