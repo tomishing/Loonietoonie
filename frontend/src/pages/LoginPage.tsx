@@ -1,5 +1,6 @@
 import { useAuth } from '../auth/AuthContext'
 import { Icon, type IconName } from '../components/Icon'
+import { PRIVACY_POLICY_URL } from '../lib/links'
 
 const FEATURES: { icon: IconName; title: string; text: string }[] = [
   { icon: 'camera', title: 'Scan receipts', text: 'Snap a photo; items, prices and categories are filled in for you.' },
@@ -75,7 +76,14 @@ export function LoginPage() {
         </button>
         <p className="login-privacy">
           <Icon name="lock" size={16} />
-          Your receipts stay in your own Google Drive. LoonieToonie can only open the files it creates.
+          <span>
+            Your receipts stay in your own Google Drive. LoonieToonie can only open the files it creates. By
+            continuing, you agree to the{' '}
+            <a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer">
+              Privacy policy
+            </a>
+            .
+          </span>
         </p>
       </div>
     </main>

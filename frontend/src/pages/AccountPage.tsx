@@ -6,6 +6,7 @@ import { CategoryList } from '../components/CategoryList'
 import { HouseholdForm } from '../components/HouseholdForm'
 import { StatementAccounts } from '../components/StatementAccounts'
 import { Icon } from '../components/Icon'
+import { PRIVACY_POLICY_URL } from '../lib/links'
 
 // Linked banks (Plaid) are on the web app only (phase 12); the Android build leaves them out.
 const BankLinks =
@@ -50,6 +51,18 @@ export function AccountPage() {
             <span className="menu-text">
               My LoonieToonie spreadsheet
               <span className="muted">All your receipts, in your own Google Drive</span>
+            </span>
+            <Icon name="external" size={18} className="menu-chevron" />
+          </a>
+        </li>
+        <li>
+          <a className="menu-row" href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer">
+            <span className="menu-icon">
+              <Icon name="lock" />
+            </span>
+            <span className="menu-text">
+              Privacy policy
+              <span className="muted">What LoonieToonie keeps, who receives it, and how to delete it</span>
             </span>
             <Icon name="external" size={18} className="menu-chevron" />
           </a>

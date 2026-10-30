@@ -405,6 +405,11 @@
   font-size: 0.8rem;
 }
 
+.login-privacy a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .login-privacy svg,
 .privacy-note svg {
   flex: none;
