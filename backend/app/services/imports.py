@@ -26,7 +26,7 @@ from app.imports.categorizer import (
     MerchantToCategorize,
 )
 from app.imports.parser import ColumnMapping, ImportFileError, ParsedRow, parse_statement
-from app.imports.rules import keyword_kind
+from app.imports.rules import keyword_kind, known_category
 from app.services.bank_categories import find_rule
 from app.services.locks import user_lock
 from app.services.matching import refresh_matches
@@ -489,7 +489,11 @@ def _to_transactions(
         if rule is not None:
             choice = (rule.kind, rule.category, rule.subcategory)
         else:
-            choice = history.get(merchant_key(merchant)) or history.get(bank_key(c.row.description))
+            choice = (
+                _known(c.row.description, c.row.amount, account.type, categories)
+                or history.get(merchant_key(merchant))
+                or history.get(bank_key(c.row.description))
+            )
         if choice is None:
             kind = keyword_kind(c.row.description, c.row.amount, account.type)
             if kind is not None:
@@ -542,6 +546,20 @@ def _merchant_history(transactions: list[BankTransaction]) -> dict[str, Choice]:
         history[merchant_key(t.merchant or t.description)] = choice
         history[bank_key(t.description)] = choice
     return history
+
+
+def _known(description: str, amount: Decimal, account_type: str, categories: list[Category]) -> Choice | None:
+    """A well-known Canadian public service or transit operator (rules.known_category), in the
+    sheet's spelling. Money into a bank account (a benefit, a rebate) isn't spending, and a category
+    the user renamed or removed leaves the merchant to the next steps."""
+    found = known_category(description)
+    if found is None or (amount < 0 and account_type != "credit"):
+        return None
+    category = next((c for c in categories if c.name.casefold() == found[0].casefold()), None)
+    if category is None:
+        return None
+    subcategory = next((s for s in category.subcategories if s.casefold() == found[1].casefold()), "")
+    return ("spending", category.name, subcategory)
 
 
 def _fallback(amount: Decimal, account_type: str) -> Choice:

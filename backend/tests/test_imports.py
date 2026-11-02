@@ -29,7 +29,7 @@ from app.imports.parser import (
     parse_date,
     parse_statement,
 )
-from app.imports.rules import keyword_kind
+from app.imports.rules import keyword_kind, known_category
 from app.main import app
 from app.services import bank as bank_service
 from app.services import imports as service
@@ -285,6 +285,71 @@ def test_dates() -> None:
 )
 def test_keyword_rules(text: str, amount: str, account_type: str, expected: str | None) -> None:
     assert keyword_kind(text, Decimal(amount), account_type) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("COMPASS VENDING BURNABY BC", ("Transportation", "Public Transit")),
+        ("TRANSLINK-COMPASS VANCOUVER", ("Transportation", "Public Transit")),
+        ("PRESTO AUTL/T1234 TORONTO ON", ("Transportation", "Public Transit")),
+        ("TTC-SHEPPARD STN TORONTO", ("Transportation", "Public Transit")),
+        ("STM-METRO BERRI-UQAM MONTREAL QC", ("Transportation", "Public Transit")),
+        ("Société de transport de Laval", ("Transportation", "Public Transit")),
+        ("OC TRANSPO OTTAWA ON", ("Transportation", "Public Transit")),
+        ("407 ETR WOODBRIDGE ON", ("Transportation", "Parking")),
+        ("IMPARK00123 VANCOUVER BC", ("Transportation", "Parking")),  # digits separate words
+        ("EASYPARK LOT 42", ("Transportation", "Parking")),
+        ("CITY OF TORONTO PARKING", ("Transportation", "Parking")),
+        ("ICBC AUTOPLAN NORTH VANCOUVER", ("Transportation", "")),
+        ("VIA RAIL CANADA 0123 MONTREAL", ("Travel", "Trains & Buses")),
+        ("BC HYDRO BILL PAY", ("Utilities", "Electricity")),
+        ("HYDRO-QUÉBEC MONTRÉAL", ("Utilities", "Electricity")),
+        ("FORTISBC - NATURAL GAS", ("Utilities", "Gas & Heating")),
+        ("Énergir", ("Utilities", "Gas & Heating")),
+        ("FIDO MOBILE MONTREAL", ("Utilities", "Phone")),
+        ("ROGERS WIRELESS *123", ("Utilities", "Phone")),
+        ("ROGERS ******1234", ("Utilities", "")),
+        ("SHAW CABLESYSTEMS", ("Utilities", "Internet")),
+        ("IRCC/IRCC OTTAWA ON", ("Tax & Fees", "")),
+        ("CANADA REVENUE AGENCY TAX", ("Tax & Fees", "")),
+        ("SERVICEONTARIO #123 TORONTO", ("Tax & Fees", "")),
+        # Look-alikes stay with Claude.
+        ("SHAWARMA PALACE OTTAWA", None),
+        ("STEAM GAMES", None),
+        ("CRAFT BEER MARKET", None),
+        ("PIZZA HUT", None),
+    ],
+)
+def test_known_canadian_services(text: str, expected: tuple[str, str] | None) -> None:
+    assert known_category(text) == expected
+
+
+def test_known_services_skip_claude_and_follow_the_sheet(
+    repository: SheetsRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    account = card(repository, "depository")
+    categorizer = FakeCategorizer()
+    data = (
+        b"2026-10-01,INTERNET BILL PAY BC HYDRO,80.00,,\n"
+        b"2026-10-02,COMPASS VENDING BURNABY BC,20.00,,\n"
+        b"2026-10-03,SERVICE CANADA EI,,500.00,\n"  # money in: a benefit, not spending
+    )
+    do_import(repository, account, data, categorizer)
+    choices = [(t.kind, t.category, t.subcategory) for t in active(repository)]
+    assert choices == [
+        ("spending", "Utilities", "Electricity"),
+        ("spending", "Transportation", "Public Transit"),
+        ("income", "", ""),
+    ]
+    assert categorizer.asked == []  # no merchant needed Claude
+
+    # A category the user renamed or removed leaves the merchant to Claude.
+    kept = [c for c in repository.list_categories() if c.name != "Utilities"]
+    monkeypatch.setattr(repository, "list_categories", lambda: kept)
+    do_import(repository, account, b"2026-10-05,FORTISBC GAS,60.00,,\n", categorizer)
+    [asked] = categorizer.asked
+    assert len(asked) == 1 and "fortis" in asked[0].text.lower()
 
 
 # --- importing -------------------------------------------------------------------------------------
