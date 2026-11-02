@@ -182,30 +182,29 @@ export function TransactionsPage() {
         </p>
       )}
 
-      {(hasBanks || view === 'bank') && (
-        <div className="segmented" role="tablist" aria-label="Show">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={view === 'receipts'}
-            className={view === 'receipts' ? 'segment segment-on' : 'segment'}
-            onClick={() => setFilter('view', '')}
-          >
-            <Icon name="list" size={18} />
-            Receipts
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={view === 'bank'}
-            className={view === 'bank' ? 'segment segment-on' : 'segment'}
-            onClick={() => setFilter('view', 'bank')}
-          >
-            <Icon name="card" size={18} />
-            Bank & card
-          </button>
-        </div>
-      )}
+      {/* Always shown, so new users find bank and card statements: the empty Bank & card view offers the import. */}
+      <div className="segmented" role="tablist" aria-label="Show">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'receipts'}
+          className={view === 'receipts' ? 'segment segment-on' : 'segment'}
+          onClick={() => setFilter('view', '')}
+        >
+          <Icon name="list" size={18} />
+          Receipts
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'bank'}
+          className={view === 'bank' ? 'segment segment-on' : 'segment'}
+          onClick={() => setFilter('view', 'bank')}
+        >
+          <Icon name="card" size={18} />
+          Bank & card
+        </button>
+      </div>
 
       <div className="chip-row" role="group" aria-label="Filters">
         <button
