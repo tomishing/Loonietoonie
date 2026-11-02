@@ -98,6 +98,7 @@ export function StatementAccounts() {
       })
       .catch((error: unknown) => setLoadError(errorMessages(error)))
   }, [])
+  useEffect(load, [load])
 
   if (loadError) {
     return (
