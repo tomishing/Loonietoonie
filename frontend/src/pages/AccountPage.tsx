@@ -6,7 +6,7 @@ import { CategoryList } from '../components/CategoryList'
 import { HouseholdForm } from '../components/HouseholdForm'
 import { StatementAccounts } from '../components/StatementAccounts'
 import { Icon } from '../components/Icon'
-import { PRIVACY_POLICY_URL } from '../lib/links'
+import { DELETE_DATA_URL, PRIVACY_POLICY_URL } from '../lib/links'
 
 // Linked banks (Plaid) are on the web app only (phase 12); the Android build leaves them out.
 const BankLinks =
@@ -62,7 +62,19 @@ export function AccountPage() {
             </span>
             <span className="menu-text">
               Privacy policy
-              <span className="muted">What LoonieToonie keeps, who receives it, and how to delete it</span>
+              <span className="muted">What LoonieToonie keeps, and who receives it</span>
+            </span>
+            <Icon name="external" size={18} className="menu-chevron" />
+          </a>
+        </li>
+        <li>
+          <a className="menu-row" href={DELETE_DATA_URL} target="_blank" rel="noreferrer">
+            <span className="menu-icon">
+              <Icon name="trash" />
+            </span>
+            <span className="menu-text">
+              Delete your data
+              <span className="muted">Your data is in your own Google Drive: how to remove all or some of it</span>
             </span>
             <Icon name="external" size={18} className="menu-chevron" />
           </a>

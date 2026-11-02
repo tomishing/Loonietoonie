@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Delete your LoonieToonie Tracker data</title>
+    <meta name="description" content="How to delete your LoonieToonie Tracker account and data, all of it or only some." />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <img class="logo" src="loon-badge.png" alt="" width="56" height="56" />
+        <h1>Delete your data</h1>
+      </header>
+
+      <p>
+        LoonieToonie Tracker has no separate account and no database of your spending. You sign in with Google, and your
+        receipts, photos, transactions, Ask conversations, and settings are saved in a <strong>LoonieToonie</strong> folder
+        in <strong>your own Google Drive</strong>. So you delete them yourself, right away, without waiting for anyone.
+      </p>
+
+      <h2>Delete everything</h2>
+      <ol>
+        <li>
+          <strong>Linked banks (web app only):</strong> if you linked a bank or card through Plaid, open Account and tap
+          <strong>Unlink</strong> on each one. This deletes its access key from the LoonieToonie server. The Android app
+          never links banks, so most people can skip this step.
+        </li>
+        <li>
+          <strong>Your data:</strong> in <a href="https://drive.google.com">Google Drive</a>, delete the
+          <strong>LoonieToonie</strong> folder, then empty the Drive trash (Drive otherwise keeps deleted files for 30
+          days).
+        </li>
+        <li>
+          <strong>LoonieToonie's access:</strong> at
+          <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>, choose
+          <strong>LoonieToonie Tracker</strong> and remove its access. This ends your account: LoonieToonie can no longer
+          read or create anything in your Drive.
+        </li>
+        <li>
+          <strong>On your phone:</strong> sign out on the Account page, or uninstall the app. Your sign-in is kept only on
+          your device and goes with it.
+        </li>
+      </ol>
+
+      <h2>Delete only some data</h2>
+      <ul>
+        <li>A receipt: open it and tap <strong>Delete</strong>.</li>
+        <li>
+          An imported statement: Account → Accounts &amp; cards → the account → <strong>Import history</strong> →
+          <strong>Undo</strong>.
+        </li>
+        <li>An Ask conversation: Ask → <strong>History</strong> → the trash icon next to it.</li>
+        <li>Your household type and province: Account → Your household → <strong>Clear</strong>.</li>
+      </ul>
+      <p>
+        These remove the data from the app, but the spreadsheet keeps each row, marked <code>deleted</code> =
+        <code>TRUE</code>, so that your other devices notice the change. To erase a row for good, delete it in your
+        LoonieToonie spreadsheet in Google Drive (the <code>receipts</code>, <code>items</code>,
+        <code>bank_transactions</code>, and <code>chat_messages</code> tabs), and delete a receipt's photo from the
+        <strong>receipts</strong> folder inside the LoonieToonie folder.
+      </p>
+
+      <h2>What the server keeps</h2>
+      <p>
+        Nothing of your spending. Server logs record which parts of the app were used and when, with your Google account
+        ID but no receipt or transaction contents. If you'd like anything connected to your account removed from them,
+        or need help deleting your data, email
+        <a href="mailto:loonietoonietracker.dev@gmail.com">loonietoonietracker.dev@gmail.com</a>.
+      </p>
+      <p>See the <a href="privacy.html">privacy policy</a> for what LoonieToonie uses and who receives it.</p>
+
+      <footer><a href="index.html">LoonieToonie Tracker home</a></footer>
+    </main>
+  </body>
+</html>
