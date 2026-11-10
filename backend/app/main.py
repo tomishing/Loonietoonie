@@ -13,7 +13,18 @@ from app.storage.repository import StorageError
 logger = logging.getLogger(__name__)
 
 
+def _configure_logging() -> None:
+    """Show the app's own INFO logs next to uvicorn's (Python's fallback handler shows only warnings)."""
+    app_logger = logging.getLogger("app")
+    if not app_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s: %(message)s"))
+        app_logger.addHandler(handler)
+        app_logger.setLevel(logging.INFO)
+
+
 def create_app() -> FastAPI:
+    _configure_logging()
     settings = get_settings()
     app = FastAPI(title="LoonieToonie API", version=__version__)
     if settings.app_env != "development" and not settings.allowed_emails:

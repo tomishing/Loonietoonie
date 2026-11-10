@@ -1,6 +1,7 @@
 import { useAuth } from '../auth/AuthContext'
 import { Icon, type IconName } from '../components/Icon'
-import { PRIVACY_POLICY_URL } from '../lib/links'
+import { feedbackUrl, PRIVACY_POLICY_URL } from '../lib/links'
+import { isNativeApp } from '../platform'
 
 const FEATURES: { icon: IconName; title: string; text: string }[] = [
   { icon: 'camera', title: 'Scan receipts', text: 'Snap a photo; items, prices and categories are filled in for you.' },
@@ -67,7 +68,11 @@ export function LoginPage() {
         </div>
         {signInError && (
           <p className="notice notice-error" role="alert">
-            {signInError}
+            {signInError}{' '}
+            <a href={feedbackUrl(`LoonieToonie sign-in problem (${isNativeApp ? 'Android' : 'web'})`)}>
+              Still stuck? Email us
+            </a>
+            .
           </p>
         )}
         <button type="button" className="google-button" onClick={signIn}>

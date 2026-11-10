@@ -197,3 +197,40 @@ def test_app_sign_in_can_use_its_own_google_callback(monkeypatch: pytest.MonkeyP
     assert used == [app_callback]
     web_redirect = parse_qs(urlparse(web.headers["location"]).query)["redirect_uri"][0]
     assert web_redirect == settings.google_redirect_uri
+
+
+def test_app_error_returns_to_the_app_without_the_state_cookie(client: TestClient) -> None:
+    """A browser that lost the state cookie (another browser, cleared cookies) still lands in the app."""
+    params = start_app_login(client)
+    client.cookies.clear()
+
+    response = client.get("/api/auth/callback", params={"code": "auth-code", "state": params["state"]})
+
+    assert deep_link_params(response) == {"error": "invalid_state"}
+
+
+def test_app_state_is_marked_and_web_state_is_not(client: TestClient) -> None:
+    assert start_app_login(client)["state"].startswith(auth_api.APP_STATE_PREFIX)
+    client.cookies.clear()
+    web = client.get("/api/auth/google")
+    state = parse_qs(urlparse(web.headers["location"]).query)["state"][0]
+    assert not state.startswith(auth_api.APP_STATE_PREFIX)
+
+
+def test_sign_in_failures_are_logged_without_the_email(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    params = start_app_login(client)
+    monkeypatch.setattr(
+        google, "exchange_code", lambda settings, code, verifier, redirect_uri: tokens(scope="openid email")
+    )
+    monkeypatch.setattr(google, "verify_id_token", lambda settings, token: USER)
+
+    with caplog.at_level("INFO", logger="app"):
+        client.get("/api/auth/callback", params={"code": "auth-code", "state": params["state"]})
+        client.post("/api/auth/app/token", json={"code": "bogus", "verifier": VERIFIER})
+
+    assert "Sign-in failed: drive_permission_required (android)" in caplog.text
+    assert "App sign-in token exchange failed: code expired or invalid" in caplog.text
+    assert USER.email not in caplog.text
+    assert USER.sub not in caplog.text

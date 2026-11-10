@@ -75,6 +75,10 @@ class AppTokenResponse(BaseModel):
 # RFC 7636 S256 challenge: 43 base64url characters.
 CHALLENGE_PATTERN = r"^[A-Za-z0-9_-]{43}$"
 
+# Android sign-ins put this before the OAuth state, so a failure still returns to the app when the
+# browser lost the state cookie. It only steers where the error goes; the state check is unchanged.
+APP_STATE_PREFIX = "a."
+
 
 def _redirect_with_error(settings: Settings, reason: str, to_app: bool = False) -> RedirectResponse:
     target = (
@@ -104,7 +108,7 @@ def login(
             status.HTTP_422_UNPROCESSABLE_CONTENT, detail="challenge is required for app sign-in"
         )
 
-    state = secrets.token_urlsafe(32)
+    state = (APP_STATE_PREFIX if app is not None else "") + secrets.token_urlsafe(32)
     code_verifier, code_challenge = google.new_pkce_pair()
 
     response = RedirectResponse(
@@ -145,9 +149,20 @@ def callback(
         settings.session_secret,
         OAUTH_STATE_MAX_AGE_SECONDS,
     )
-    to_app = saved is not None and saved.app_challenge is not None
+    if saved is not None:
+        to_app = saved.app_challenge is not None
+    else:
+        to_app = state is not None and state.startswith(APP_STATE_PREFIX)
 
     def fail(reason: str) -> RedirectResponse:
+        # No email or Google ID: enough to tell which step fails, and on which platform.
+        logger.warning(
+            "Sign-in failed: %s (%s%s%s)",
+            reason,
+            "android" if to_app else "web",
+            "" if saved is not None else ", no state cookie",
+            f", google error {error}" if error else "",
+        )
         return _redirect_with_error(settings, reason, to_app)
 
     if error:
@@ -164,13 +179,12 @@ def callback(
 
     # Invite-only: stop before any spreadsheet is created for someone who isn't on the list.
     if not settings.sign_in_allowed_for(user.email):
-        logger.info("Sign-in refused: %s is not on ALLOWED_EMAILS", user.sub)
         return fail("not_invited")
     # Google lets users untick individual permissions on the consent screen.
     if google.DRIVE_FILE_SCOPE not in tokens.granted_scopes:
         return fail("drive_permission_required")
     if not tokens.refresh_token:
-        logger.warning("Google did not return a refresh token for %s", user.sub)
+        logger.warning("Google did not return a refresh token")
         return fail("google_error")
 
     # First sign-in creates the spreadsheet; later sign-ins migrate it to the current schema.
@@ -179,7 +193,7 @@ def callback(
         credentials = get_credentials(tokens.refresh_token, settings)
         spreadsheet_id = storage_setup.prepare_user_storage(credentials)
     except (google.GoogleAuthError, StorageError):
-        logger.warning("Could not prepare storage for %s", user.sub, exc_info=True)
+        logger.warning("Could not prepare storage", exc_info=True)
         return fail("storage_error")
 
     session = SessionData(
@@ -190,6 +204,7 @@ def callback(
         refresh_token=tokens.refresh_token,
         spreadsheet_id=spreadsheet_id,
     )
+    logger.info("Sign-in succeeded (%s)", "android" if to_app else "web")
     if saved.app_challenge is not None:
         # Android: hand the session to the app through its deep link (no cookie for the browser).
         handoff = seal(AppHandoff(session=session, challenge=saved.app_challenge), settings.session_secret)
@@ -218,7 +233,14 @@ def app_token(body: AppTokenRequest, settings: SettingsDep) -> AppTokenResponse:
     """Android: exchange the deep-link code plus the app's PKCE verifier for a session token."""
     _require_auth_config(settings)
     handoff = unseal(body.code, AppHandoff, settings.session_secret, APP_HANDOFF_MAX_AGE_SECONDS)
-    if handoff is None or not secrets.compare_digest(google.pkce_challenge(body.verifier), handoff.challenge):
+    if handoff is None:
+        problem = "code expired or invalid"
+    elif not secrets.compare_digest(google.pkce_challenge(body.verifier), handoff.challenge):
+        problem = "verifier does not match"
+    else:
+        problem = None
+    if handoff is None or problem is not None:
+        logger.warning("App sign-in token exchange failed: %s", problem)
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, detail="Sign-in expired or invalid. Please try again."
         )

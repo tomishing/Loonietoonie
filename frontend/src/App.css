@@ -580,6 +580,11 @@
   color: #a1181d;
 }
 
+.notice a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .notice-ok {
   background: #dcf5e7;
   color: #17643a;

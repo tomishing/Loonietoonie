@@ -6,7 +6,8 @@ import { CategoryList } from '../components/CategoryList'
 import { HouseholdForm } from '../components/HouseholdForm'
 import { StatementAccounts } from '../components/StatementAccounts'
 import { Icon } from '../components/Icon'
-import { DELETE_DATA_URL, PRIVACY_POLICY_URL } from '../lib/links'
+import { DELETE_DATA_URL, feedbackUrl, PRIVACY_POLICY_URL } from '../lib/links'
+import { isNativeApp } from '../platform'
 
 // Linked banks (Plaid) are on the web app only (phase 12); the Android build leaves them out.
 const BankLinks =
@@ -77,6 +78,18 @@ export function AccountPage() {
               <span className="muted">Your data is in your own Google Drive: how to remove all or some of it</span>
             </span>
             <Icon name="external" size={18} className="menu-chevron" />
+          </a>
+        </li>
+        <li>
+          <a className="menu-row" href={feedbackUrl(`LoonieToonie feedback (${isNativeApp ? 'Android' : 'web'})`)}>
+            <span className="menu-icon">
+              <Icon name="mail" />
+            </span>
+            <span className="menu-text">
+              Send feedback
+              <span className="muted">Report a problem or suggest an idea by email</span>
+            </span>
+            <Icon name="right" size={18} className="menu-chevron" />
           </a>
         </li>
       </ul>

@@ -26,6 +26,7 @@ const PATHS = {
   clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   close: 'M6 6l12 12M18 6L6 18',
+  mail: 'M3 6h18v12H3zM3 7l9 6 9-6',
 } as const
 
 export type IconName = keyof typeof PATHS
