@@ -3,7 +3,7 @@
 Household expense app: scan your receipts and see where your money goes — spending by category, month-to-month changes, and what's unusual.
 See `specification.md` for the full spec.
 
-On Google Play the app is **LoonieToonie: Expense Tracker** (package `com.loonietoonie.app`). The public pages are served by GitHub Pages from `docs/`: [home](https://tomishing.github.io/Loonietoonie/), [privacy policy](https://tomishing.github.io/Loonietoonie/privacy.html), and [Delete your data](https://tomishing.github.io/Loonietoonie/delete.html).
+On Google Play the app is **LoonieToonie: Expense Tracker** (package `com.loonietoonie.app`). The public pages are served by GitHub Pages from `docs/` on the custom domain in `docs/CNAME`: [home](https://loonietoonietracker.com/), [privacy policy](https://loonietoonietracker.com/privacy.html), and [Delete your data](https://loonietoonietracker.com/delete.html). The old `tomishing.github.io/Loonietoonie/` addresses redirect there.
 
 ## Requirements
 
