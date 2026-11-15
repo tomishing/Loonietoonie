@@ -3,6 +3,8 @@
 Household expense app: scan your receipts and see where your money goes — spending by category, month-to-month changes, and what's unusual.
 See `specification.md` for the full spec.
 
+On Google Play the app is **LoonieToonie: Expense Tracker** (package `com.loonietoonie.app`). The public pages are served by GitHub Pages from `docs/`: [home](https://tomishing.github.io/Loonietoonie/), [privacy policy](https://tomishing.github.io/Loonietoonie/privacy.html), and [Delete your data](https://tomishing.github.io/Loonietoonie/delete.html).
+
 ## Requirements
 
 - Node.js 22.22+ and npm (required by React Router 8 and Vite 8)
